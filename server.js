@@ -54,15 +54,19 @@ app.get("/healthz", (_request, response) => {
   response.status(200).json({ ok: true });
 });
 
-app.get("/bang", (_request, response) => {
+app.get(["/", "/index.html"], (_request, response) => {
+  response.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.get(["/bang", "/bang/"], (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "bang", "index.html"));
 });
 
-app.get("/davinci", (_request, response) => {
+app.get(["/davinci", "/davinci/"], (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "davinci", "index.html"));
 });
 
-app.get("/omok", (_request, response) => {
+app.get(["/omok", "/omok/"], (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "omok", "index.html"));
 });
 
