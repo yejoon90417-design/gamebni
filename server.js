@@ -7,6 +7,19 @@ const attachBangGame = require("./bang-game");
 const attachDavinciGame = require("./davinci-game");
 const attachHalliGame = require("./halli-game");
 const attachOmokGame = require("./omok-game");
+const { closeRedisClient } = require("./redis-client");
+const { createRoomStore, normalizeRoomCode, snapshotRoom } = require("./room-store");
+const {
+  bindPlayerSocket,
+  cancelDisconnect,
+  createPresenceState,
+  getDisconnectGraceMs,
+  getSocketPlayerId,
+  isPlayerConnected,
+  registerSessionNamespace,
+  restoreRoomPresence,
+  schedulePlayerDisconnect
+} = require("./stability");
 
 const PORT = process.env.PORT || 3000;
 const ROOM_CODE_LENGTH = 5;
@@ -46,10 +59,17 @@ const BOT_CHAT_LINES = [
 ];
 
 const rooms = new Map();
+const disconnectTimers = new Map();
+const DISCONNECT_GRACE_MS = getDisconnectGraceMs();
+const roomStore = createRoomStore({
+  gameKey: "liar",
+  serializeRoom: (room) => snapshotRoom(room, { timers: [] })
+});
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+registerSessionNamespace(io);
 
 app.use((request, response, next) => {
   if (request.path === "/halli" || request.path === "/halli/" || request.path.startsWith("/halli/")) {
@@ -87,11 +107,6 @@ app.get(["/halli", "/halli/"], (_request, response) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-attachBangGame(io);
-attachDavinciGame(io);
-attachHalliGame(io);
-attachOmokGame(io);
-
 function sanitizeName(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -114,11 +129,12 @@ function randomItem(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-function createPlayer(id, name, isBot = false) {
+function createPlayer(id, name, isBot = false, socketId = null) {
   return {
     id,
     name: sanitizeName(name),
-    isBot
+    isBot,
+    ...createPresenceState(isBot ? null : socketId)
   };
 }
 
@@ -153,10 +169,10 @@ function generateRoomCode() {
   return code;
 }
 
-function createRoom(code, hostSocketId, hostName, options = {}) {
+function createRoom(code, hostId, hostSocketId, hostName, options = {}) {
   const room = {
     code,
-    hostId: hostSocketId,
+    hostId,
     phase: "lobby",
     round: 0,
     topic: "",
@@ -166,7 +182,7 @@ function createRoom(code, hostSocketId, hostName, options = {}) {
     result: null,
     eliminatedIds: [],
     testMode: Boolean(options.testMode),
-    players: [createPlayer(hostSocketId, hostName)],
+    players: [createPlayer(hostId, hostName, false, hostSocketId)],
     turnOrder: [],
     turnIndex: 0,
     discussionRound: 1,
@@ -190,8 +206,39 @@ function getRoom(code) {
   return rooms.get(String(code || "").toUpperCase());
 }
 
-function getPlayer(room, socketId) {
-  return room.players.find((player) => player.id === socketId) || null;
+function hydrateRoom(snapshot) {
+  const room = {
+    ...snapshot,
+    code: normalizeRoomCode(snapshot.code),
+    timers: new Set()
+  };
+
+  room.players = (snapshot.players || []).map((player) => ({
+    ...createPresenceState(),
+    ...player
+  }));
+
+  room.messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+  room.liarIds = Array.isArray(snapshot.liarIds) ? snapshot.liarIds : [];
+  room.eliminatedIds = Array.isArray(snapshot.eliminatedIds) ? snapshot.eliminatedIds : [];
+  room.turnOrder = Array.isArray(snapshot.turnOrder) ? snapshot.turnOrder : [];
+  room.votes = snapshot.votes && typeof snapshot.votes === "object" ? snapshot.votes : {};
+  room.voteCounts =
+    snapshot.voteCounts && typeof snapshot.voteCounts === "object" ? snapshot.voteCounts : {};
+
+  return room;
+}
+
+function persistRoomState(room) {
+  roomStore.save(room);
+}
+
+function deletePersistedRoom(code) {
+  roomStore.remove(code);
+}
+
+function getPlayer(room, playerId) {
+  return room.players.find((player) => player.id === playerId || player.socketId === playerId) || null;
 }
 
 function isEliminated(room, playerId) {
@@ -236,7 +283,9 @@ function serializePlayer(player, room) {
     name: player.name,
     isBot: Boolean(player.isBot),
     isHost: room.hostId === player.id,
-    isEliminated: isEliminated(room, player.id)
+    isEliminated: isEliminated(room, player.id),
+    connected: isPlayerConnected(player),
+    disconnectDeadlineAt: player.disconnectDeadlineAt || null
   };
 }
 
@@ -367,6 +416,11 @@ function broadcastReaction(room, payload) {
 }
 
 function clearRoomTimers(room) {
+  if (!room?.timers) {
+    room.timers = new Set();
+    return;
+  }
+
   room.timers.forEach((timer) => clearTimeout(timer));
   room.timers.clear();
 }
@@ -936,13 +990,41 @@ function refreshRoomAutomation(room) {
 }
 
 function syncRoom(room) {
+  persistRoomState(room);
   broadcastRoom(room);
   refreshRoomAutomation(room);
 }
 
-function removePlayer(socketId) {
+function attachSocketToPlayer(room, socket, player) {
+  socket.join(room.code);
+  bindPlayerSocket(io, player, socket, disconnectTimers);
+}
+
+function disconnectPlayerSocket(socket) {
+  const playerId = getSocketPlayerId(socket);
+
+  if (!playerId) {
+    return;
+  }
+
   for (const room of rooms.values()) {
-    const index = room.players.findIndex((player) => player.id === socketId);
+    const player = room.players.find((candidate) => candidate.id === playerId && !candidate.isBot);
+
+    if (!player || player.socketId !== socket.id) {
+      continue;
+    }
+
+    schedulePlayerDisconnect(player, disconnectTimers, removePlayer, DISCONNECT_GRACE_MS);
+    syncRoom(room);
+    return;
+  }
+}
+
+function removePlayer(playerId) {
+  cancelDisconnect(disconnectTimers, playerId);
+
+  for (const room of rooms.values()) {
+    const index = room.players.findIndex((player) => player.id === playerId);
 
     if (index === -1) {
       continue;
@@ -954,10 +1036,11 @@ function removePlayer(socketId) {
     if (getHumanPlayers(room).length === 0) {
       clearRoomTimers(room);
       rooms.delete(room.code);
+      deletePersistedRoom(room.code);
       return;
     }
 
-    if (room.hostId === socketId) {
+    if (room.hostId === playerId) {
       room.hostId = nextHostId(room);
     }
 
@@ -977,17 +1060,18 @@ function removePlayer(socketId) {
 io.on("connection", (socket) => {
   socket.on("room:create", ({ name, settings }, callback = () => {}) => {
     const cleanName = sanitizeName(name);
+    const playerId = getSocketPlayerId(socket);
 
     if (!cleanName) {
       callback({ ok: false, message: "이름을 입력하세요" });
       return;
     }
 
-    removePlayer(socket.id);
+    removePlayer(playerId);
     leaveJoinedRooms(socket);
 
-    const room = createRoom(generateRoomCode(), socket.id, cleanName, { settings });
-    socket.join(room.code);
+    const room = createRoom(generateRoomCode(), playerId, socket.id, cleanName, { settings });
+    attachSocketToPlayer(room, socket, room.players[0]);
     syncRoom(room);
     callback({ ok: true, code: room.code });
   });
@@ -995,6 +1079,7 @@ io.on("connection", (socket) => {
   socket.on("room:join", ({ code, name }, callback = () => {}) => {
     const cleanName = sanitizeName(name);
     const room = getRoom(code);
+    const playerId = getSocketPlayerId(socket);
 
     if (!cleanName) {
       callback({ ok: false, message: "이름을 입력하세요" });
@@ -1006,29 +1091,38 @@ io.on("connection", (socket) => {
       return;
     }
 
+    const reconnectingPlayer = room.players.find((player) => player.id === playerId && !player.isBot);
+    if (reconnectingPlayer) {
+      reconnectingPlayer.name = cleanName;
+      leaveJoinedRooms(socket);
+      attachSocketToPlayer(room, socket, reconnectingPlayer);
+      syncRoom(room);
+      callback({ ok: true, code: room.code, restored: true });
+      return;
+    }
     if (room.phase !== "lobby") {
       callback({ ok: false, message: "게임이 이미 진행 중입니다" });
       return;
     }
-
-    removePlayer(socket.id);
+    removePlayer(playerId);
     leaveJoinedRooms(socket);
 
-    room.players.push(createPlayer(socket.id, cleanName));
-    socket.join(room.code);
+    room.players.push(createPlayer(playerId, cleanName, false, socket.id));
+    attachSocketToPlayer(room, socket, room.players[room.players.length - 1]);
     syncRoom(room);
     callback({ ok: true, code: room.code });
   });
 
   socket.on("round:start", ({ code }, callback = () => {}) => {
     const room = getRoom(code);
+    const playerId = getSocketPlayerId(socket);
 
     if (!room) {
       callback({ ok: false, message: "방을 찾을 수 없습니다" });
       return;
     }
 
-    if (room.hostId !== socket.id) {
+    if (room.hostId !== playerId) {
       callback({ ok: false, message: "호스트만 시작할 수 있습니다" });
       return;
     }
@@ -1062,7 +1156,8 @@ io.on("connection", (socket) => {
 
   socket.on("chat:send", ({ code, text }, callback = () => {}) => {
     const room = getRoom(code);
-    const player = room ? getPlayer(room, socket.id) : null;
+    const playerId = getSocketPlayerId(socket);
+    const player = room ? getPlayer(room, playerId) : null;
     const cleanText = sanitizeText(text, MAX_CHAT_LENGTH);
 
     if (!room || !player) {
@@ -1075,7 +1170,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (room.settings.voteMode === "elimination" && isEliminated(room, socket.id)) {
+    if (room.settings.voteMode === "elimination" && isEliminated(room, playerId)) {
       callback({ ok: false, message: "탈락한 플레이어는 채팅할 수 없습니다" });
       return;
     }
@@ -1098,7 +1193,8 @@ io.on("connection", (socket) => {
 
   socket.on("reaction:send", ({ code, targetId, reaction }, callback = () => {}) => {
     const room = getRoom(code);
-    const player = room ? getPlayer(room, socket.id) : null;
+    const playerId = getSocketPlayerId(socket);
+    const player = room ? getPlayer(room, playerId) : null;
     const target = room ? getPlayer(room, targetId) : null;
     const reactionKey = String(reaction || "");
     const emoji = REACTION_EMOJIS[reactionKey];
@@ -1130,7 +1226,8 @@ io.on("connection", (socket) => {
 
   socket.on("discussion:submit", ({ code, text }, callback = () => {}) => {
     const room = getRoom(code);
-    const player = room ? getPlayer(room, socket.id) : null;
+    const playerId = getSocketPlayerId(socket);
+    const player = room ? getPlayer(room, playerId) : null;
     const cleanText = sanitizeText(text, MAX_OPINION_LENGTH);
 
     if (!room || !player) {
@@ -1143,7 +1240,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (activeTurnPlayerId(room) !== socket.id) {
+    if (activeTurnPlayerId(room) !== playerId) {
       callback({ ok: false, message: "아직 당신 차례가 아닙니다" });
       return;
     }
@@ -1168,7 +1265,8 @@ io.on("connection", (socket) => {
 
   socket.on("liar:guess", ({ code, guess }, callback = () => {}) => {
     const room = getRoom(code);
-    const player = room ? getPlayer(room, socket.id) : null;
+    const playerId = getSocketPlayerId(socket);
+    const player = room ? getPlayer(room, playerId) : null;
     const cleanGuess = sanitizeText(guess, MAX_GUESS_LENGTH);
 
     if (!room || !player) {
@@ -1176,7 +1274,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (!isLiar(room, socket.id)) {
+    if (!isLiar(room, playerId)) {
       callback({ ok: false, message: "라이어만 추리할 수 있습니다" });
       return;
     }
@@ -1187,7 +1285,7 @@ io.on("connection", (socket) => {
     }
 
     if (room.phase === "discussion") {
-      if (activeTurnPlayerId(room) !== socket.id) {
+      if (activeTurnPlayerId(room) !== playerId) {
         callback({ ok: false, message: "지금은 당신 차례가 아닙니다" });
         return;
       }
@@ -1203,7 +1301,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (room.phase === "final-guess" && room.accusedId === socket.id) {
+    if (room.phase === "final-guess" && room.accusedId === playerId) {
       submitFinalGuess(room, player, cleanGuess);
       syncRoom(room);
       callback({ ok: true });
@@ -1215,7 +1313,8 @@ io.on("connection", (socket) => {
 
   socket.on("vote:submit", ({ code, targetId }, callback = () => {}) => {
     const room = getRoom(code);
-    const player = room ? getPlayer(room, socket.id) : null;
+    const playerId = getSocketPlayerId(socket);
+    const player = room ? getPlayer(room, playerId) : null;
 
     if (!room || !player) {
       callback({ ok: false, message: "방 정보를 확인할 수 없습니다" });
@@ -1227,7 +1326,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (isEliminated(room, socket.id)) {
+    if (isEliminated(room, playerId)) {
       callback({ ok: false, message: "탈락한 플레이어는 투표할 수 없습니다" });
       return;
     }
@@ -1244,12 +1343,12 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (targetId === socket.id) {
+    if (targetId === playerId) {
       callback({ ok: false, message: "자기 자신에게는 투표할 수 없습니다" });
       return;
     }
 
-    room.votes[socket.id] = targetId;
+    room.votes[playerId] = targetId;
 
     if (Object.keys(room.votes).length === getActivePlayers(room).length) {
       tallyVotes(room);
@@ -1261,13 +1360,14 @@ io.on("connection", (socket) => {
 
   socket.on("round:reset", ({ code }, callback = () => {}) => {
     const room = getRoom(code);
+    const playerId = getSocketPlayerId(socket);
 
     if (!room) {
       callback({ ok: false, message: "방을 찾을 수 없습니다" });
       return;
     }
 
-    if (room.hostId !== socket.id) {
+    if (room.hostId !== playerId) {
       callback({ ok: false, message: "호스트만 초기화할 수 있습니다" });
       return;
     }
@@ -1278,10 +1378,68 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    removePlayer(socket.id);
+    disconnectPlayerSocket(socket);
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Liar game server listening on http://localhost:${PORT}`);
+async function restorePersistedRooms() {
+  const snapshots = await roomStore.restoreAll();
+
+  snapshots.forEach((snapshot) => {
+    const room = hydrateRoom(snapshot);
+    rooms.set(room.code, room);
+    restoreRoomPresence(room, disconnectTimers, removePlayer, DISCONNECT_GRACE_MS);
+    syncRoom(room);
+  });
+
+  if (snapshots.length) {
+    console.log(`[liar] restored ${snapshots.length} room(s) from Redis`);
+  }
+}
+
+async function bootstrap() {
+  await Promise.all([
+    attachBangGame(io),
+    attachDavinciGame(io),
+    attachHalliGame(io),
+    attachOmokGame(io),
+    restorePersistedRooms()
+  ]);
+
+  server.listen(PORT, () => {
+    console.log(`Liar game server listening on http://localhost:${PORT}`);
+  });
+}
+
+let isShuttingDown = false;
+
+async function shutdown(signal) {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
+  console.log(`${signal} received, shutting down`);
+
+  try {
+    await closeRedisClient();
+  } catch (error) {
+    console.error("[shutdown] failed to close Redis client", error);
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on("SIGINT", () => {
+  shutdown("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM");
+});
+
+bootstrap().catch(async (error) => {
+  console.error("[bootstrap] fatal error", error);
+  await closeRedisClient().catch(() => {});
+  process.exit(1);
 });

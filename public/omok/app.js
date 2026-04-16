@@ -1,4 +1,10 @@
 const socket = io("/omok");
+const appSession = window.GamebniSession.createClient("omok");
+socket.auth = {
+  ...(socket.auth || {}),
+  playerSessionId: appSession.playerSessionId
+};
+socket.disconnect().connect();
 const CHAT_BUBBLE_TTL = 5000;
 
 const state = {
@@ -9,7 +15,8 @@ const state = {
   lastChatLogMessageId: "",
   chatIsComposing: false,
   pendingRoomUpdate: null,
-  bubbleTimerId: null
+  bubbleTimerId: null,
+  restoreAttempted: false
 };
 
 const elements = {
@@ -48,6 +55,23 @@ const elements = {
   createRoomButton: document.getElementById("createRoomButton"),
   joinRoomButton: document.getElementById("joinRoomButton")
 };
+
+appSession.hydrateEntry({
+  nameInput: elements.nameInput,
+  roomInput: elements.roomInput
+});
+
+function currentName() {
+  return elements.nameInput.value.trim();
+}
+
+function currentRoomInput() {
+  return elements.roomInput.value.trim().toUpperCase();
+}
+
+function rememberSessionRoom(roomCode = state.roomCode, name = currentName()) {
+  appSession.rememberRoom(state.room?.me?.name || name, roomCode);
+}
 
 const PHASE_TEXT = {
   lobby: "대기",
@@ -611,6 +635,7 @@ function applyRoomUpdate(room, options = {}) {
   state.flash = "";
   state.room = room;
   state.roomCode = room.code;
+  rememberSessionRoom(room.code, room.me?.name || currentName());
   renderRoom();
 
   if (restoreChatFocus) {
@@ -646,6 +671,7 @@ async function createRoom() {
   setEntryStatus("");
   state.roomCode = response.code;
   elements.roomInput.value = response.code;
+  rememberSessionRoom(response.code);
 }
 
 async function joinRoom() {
@@ -661,6 +687,41 @@ async function joinRoom() {
 
   setEntryStatus("");
   state.roomCode = response.code;
+  rememberSessionRoom(response.code);
+}
+
+async function restoreSavedRoom() {
+  if (state.restoreAttempted || state.room) {
+    return;
+  }
+
+  const saved = appSession.getSavedRoom();
+  if (!saved?.roomCode) {
+    return;
+  }
+
+  state.restoreAttempted = true;
+
+  if (!currentName() && saved.name) {
+    elements.nameInput.value = saved.name;
+  }
+
+  if (!currentRoomInput()) {
+    elements.roomInput.value = saved.roomCode;
+  }
+
+  const response = await emitWithAck("room:join", {
+    code: currentRoomInput(),
+    name: currentName()
+  });
+
+  if (!response?.ok) {
+    appSession.clearRoom();
+    return;
+  }
+
+  state.roomCode = response.code;
+  rememberSessionRoom(response.code);
 }
 
 async function addBots() {
@@ -804,3 +865,9 @@ window.addEventListener("resize", () => {
 
 renderRuleGuide();
 renderRoom();
+
+if (socket.connected) {
+  restoreSavedRoom();
+} else {
+  socket.on("connect", restoreSavedRoom);
+}

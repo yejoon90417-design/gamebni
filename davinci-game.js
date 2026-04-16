@@ -1,6 +1,18 @@
 ﻿module.exports = function attachDavinciGame(rootIo) {
   const io = rootIo.of("/davinci");
+  const { createRoomStore, normalizeRoomCode, snapshotRoom } = require("./room-store");
 
+  const {
+    bindPlayerSocket,
+    cancelDisconnect,
+    createPresenceState,
+    getDisconnectGraceMs,
+    getSocketPlayerId,
+    isPlayerConnected,
+    registerSessionNamespace,
+    restoreRoomPresence,
+    schedulePlayerDisconnect
+  } = require("./stability");
   const ROOM_CODE_LENGTH = 5;
   const MIN_PLAYERS = 2;
   const MAX_PLAYERS = 4;
@@ -15,6 +27,13 @@
   };
 
   const rooms = new Map();
+  const disconnectTimers = new Map();
+  const DISCONNECT_GRACE_MS = getDisconnectGraceMs();
+  const roomStore = createRoomStore({
+    gameKey: "davinci",
+    serializeRoom: (room) => snapshotRoom(room, { botTimer: null })
+  });
+  registerSessionNamespace(io);
 
   function sanitizeName(value) {
     return String(value || "")
@@ -100,22 +119,23 @@
     return shuffle(tiles);
   }
 
-  function createPlayer(id, name, isBot = false) {
+  function createPlayer(id, name, isBot = false, socketId = null) {
     return {
       id,
       name: sanitizeName(name),
       isBot,
-      tiles: []
+      tiles: [],
+      ...createPresenceState(isBot ? null : socketId)
     };
   }
 
-  function createRoom(code, hostId, hostName, options = {}) {
+  function createRoom(code, hostId, hostSocketId, hostName, options = {}) {
     const room = {
       code,
       hostId,
       targetPlayerCount: sanitizeTargetPlayerCount(options.targetPlayerCount),
       phase: "lobby",
-      players: [createPlayer(hostId, hostName)],
+      players: [createPlayer(hostId, hostName, false, hostSocketId)],
       messages: [],
       deck: [],
       currentPlayerId: null,
@@ -157,8 +177,36 @@
     return rooms.get(String(code || "").toUpperCase()) || null;
   }
 
+  function hydrateRoom(snapshot) {
+    const room = {
+      ...snapshot,
+      code: normalizeRoomCode(snapshot.code),
+      botTimer: null
+    };
+
+    room.players = (snapshot.players || []).map((player) => ({
+      ...createPresenceState(),
+      ...player
+    }));
+    room.messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+    room.deck = Array.isArray(snapshot.deck) ? snapshot.deck : [];
+    room.log = Array.isArray(snapshot.log) ? snapshot.log : [];
+    room.recentAction = snapshot.recentAction || null;
+    room.startSelection = snapshot.startSelection || null;
+    room.result = snapshot.result || null;
+    return room;
+  }
+
+  function persistRoomState(room) {
+    roomStore.save(room);
+  }
+
+  function deletePersistedRoom(code) {
+    roomStore.remove(code);
+  }
+
   function getPlayer(room, playerId) {
-    return room.players.find((player) => player.id === playerId) || null;
+    return room.players.find((player) => player.id === playerId || player.socketId === playerId) || null;
   }
 
   function pushLog(room, text) {
@@ -502,7 +550,9 @@
       isHost: room.hostId === player.id,
       isEliminated: isEliminated(player),
       hiddenCount: hiddenTiles(player).length,
-      tiles: player.tiles.map((tile) => serializeTile(tile, isOwner))
+      tiles: player.tiles.map((tile) => serializeTile(tile, isOwner)),
+      connected: isPlayerConnected(player),
+      disconnectDeadlineAt: player.disconnectDeadlineAt || null
     };
   }
 
@@ -535,6 +585,8 @@
   }
 
   function broadcastRoom(room, options = {}) {
+    persistRoomState(room);
+
     room.players.forEach((player) => {
       if (!player.isBot) {
         io.to(player.id).emit("room:update", serializeRoom(room, player.id));
@@ -546,23 +598,26 @@
     }
   }
 
-  function removePlayer(socketId) {
+  function removePlayer(playerId) {
+    cancelDisconnect(disconnectTimers, playerId);
+
     for (const room of rooms.values()) {
-      const index = room.players.findIndex((player) => player.id === socketId);
+      const index = room.players.findIndex((player) => player.id === playerId);
       if (index === -1) {
         continue;
       }
 
-      const wasCurrent = room.currentPlayerId === socketId;
+      const wasCurrent = room.currentPlayerId === playerId;
       room.players.splice(index, 1);
 
       if (!room.players.some((player) => !player.isBot)) {
         clearBotTimer(room);
         rooms.delete(room.code);
+        deletePersistedRoom(room.code);
         return;
       }
 
-      if (room.hostId === socketId) {
+      if (room.hostId === playerId) {
         room.hostId = room.players.find((player) => !player.isBot)?.id || room.players[0].id;
       }
 
@@ -577,6 +632,30 @@
       }
 
       broadcastRoom(room);
+      return;
+    }
+  }
+
+  function attachSocketToPlayer(room, socket, player) {
+    socket.join(room.code);
+    bindPlayerSocket(io, player, socket, disconnectTimers);
+  }
+
+  function disconnectPlayerSocket(socket) {
+    const playerId = getSocketPlayerId(socket);
+
+    if (!playerId) {
+      return;
+    }
+
+    for (const room of rooms.values()) {
+      const player = room.players.find((candidate) => candidate.id === playerId && !candidate.isBot);
+      if (!player || player.socketId !== socket.id) {
+        continue;
+      }
+
+      schedulePlayerDisconnect(player, disconnectTimers, removePlayer, DISCONNECT_GRACE_MS);
+      broadcastRoom(room, { skipBotSchedule: true });
       return;
     }
   }
@@ -782,17 +861,18 @@
   io.on("connection", (socket) => {
     socket.on("room:create", ({ name, targetPlayerCount }, callback = () => {}) => {
       const cleanName = sanitizeName(name);
+      const playerId = getSocketPlayerId(socket);
 
       if (!cleanName) {
         callback({ ok: false, message: "이름을 입력하세요" });
         return;
       }
 
-      removePlayer(socket.id);
+      removePlayer(playerId);
       leaveJoinedRooms(socket);
 
-      const room = createRoom(generateRoomCode(), socket.id, cleanName, { targetPlayerCount });
-      socket.join(room.code);
+      const room = createRoom(generateRoomCode(), playerId, socket.id, cleanName, { targetPlayerCount });
+      attachSocketToPlayer(room, socket, room.players[0]);
       broadcastRoom(room);
       callback({ ok: true, code: room.code });
     });
@@ -800,6 +880,7 @@
     socket.on("room:join", ({ code, name }, callback = () => {}) => {
       const room = getRoom(code);
       const cleanName = sanitizeName(name);
+      const playerId = getSocketPlayerId(socket);
 
       if (!cleanName) {
         callback({ ok: false, message: "이름을 입력하세요" });
@@ -808,6 +889,16 @@
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
+        return;
+      }
+
+      const reconnectingPlayer = room.players.find((player) => player.id === playerId && !player.isBot);
+      if (reconnectingPlayer) {
+        reconnectingPlayer.name = cleanName;
+        leaveJoinedRooms(socket);
+        attachSocketToPlayer(room, socket, reconnectingPlayer);
+        broadcastRoom(room, { skipBotSchedule: true });
+        callback({ ok: true, code: room.code, restored: true });
         return;
       }
 
@@ -821,11 +912,11 @@
         return;
       }
 
-      removePlayer(socket.id);
+      removePlayer(playerId);
       leaveJoinedRooms(socket);
 
-      room.players.push(createPlayer(socket.id, cleanName));
-      socket.join(room.code);
+      room.players.push(createPlayer(playerId, cleanName, false, socket.id));
+      attachSocketToPlayer(room, socket, room.players[room.players.length - 1]);
       broadcastRoom(room);
       callback({ ok: true, code: room.code });
     });
@@ -833,13 +924,14 @@
     socket.on("room:add_bots", ({ code, count }, callback = () => {}) => {
       const room = getRoom(code);
       const addCount = Number.parseInt(count, 10);
+      const playerId = getSocketPlayerId(socket);
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
         return;
       }
 
-      if (room.hostId !== socket.id) {
+      if (room.hostId !== playerId) {
         callback({ ok: false, message: "호스트만 할 수 있습니다" });
         return;
       }
@@ -871,13 +963,14 @@
 
     socket.on("game:start", ({ code }, callback = () => {}) => {
       const room = getRoom(code);
+      const playerId = getSocketPlayerId(socket);
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
         return;
       }
 
-      if (room.hostId !== socket.id) {
+      if (room.hostId !== playerId) {
         callback({ ok: false, message: "호스트만 시작할 수 있습니다" });
         return;
       }
@@ -894,7 +987,8 @@
 
     socket.on("turn:draw", ({ code, color }, callback = () => {}) => {
       const room = getRoom(code);
-      const player = room ? getPlayer(room, socket.id) : null;
+      const playerId = getSocketPlayerId(socket);
+      const player = room ? getPlayer(room, playerId) : null;
       const selectedColor = COLORS.includes(color) ? color : null;
 
       if (!room || !player) {
@@ -902,7 +996,7 @@
         return;
       }
 
-      if (room.phase !== "draw" || room.currentPlayerId !== socket.id || isEliminated(player)) {
+      if (room.phase !== "draw" || room.currentPlayerId !== playerId || isEliminated(player)) {
         callback({ ok: false, message: "지금 진행할 수 없습니다" });
         return;
       }
@@ -937,7 +1031,8 @@
 
     socket.on("turn:guess", ({ code, targetPlayerId, tileId, value, guessType }, callback = () => {}) => {
       const room = getRoom(code);
-      const player = room ? getPlayer(room, socket.id) : null;
+      const playerId = getSocketPlayerId(socket);
+      const player = room ? getPlayer(room, playerId) : null;
       const targetPlayer = room ? getPlayer(room, targetPlayerId) : null;
       const guessValue = Number.parseInt(value, 10);
       const normalizedGuessType = guessType === "joker" ? "joker" : "number";
@@ -947,7 +1042,7 @@
         return;
       }
 
-      if (room.phase !== "guess" || room.currentPlayerId !== socket.id || isEliminated(player)) {
+      if (room.phase !== "guess" || room.currentPlayerId !== playerId || isEliminated(player)) {
         callback({ ok: false, message: "지금 추리할 수 없습니다" });
         return;
       }
@@ -1048,14 +1143,15 @@
 
     socket.on("turn:reveal_penalty", ({ code, tileId }, callback = () => {}) => {
       const room = getRoom(code);
-      const player = room ? getPlayer(room, socket.id) : null;
+      const playerId = getSocketPlayerId(socket);
+      const player = room ? getPlayer(room, playerId) : null;
 
       if (!room || !player) {
         callback({ ok: false, message: "방 정보를 확인할 수 없습니다" });
         return;
       }
 
-      if (room.phase !== "penalty" || room.pendingPenaltyPlayerId !== socket.id) {
+      if (room.phase !== "penalty" || room.pendingPenaltyPlayerId !== playerId) {
         callback({ ok: false, message: "지금 공개할 수 없습니다" });
         return;
       }
@@ -1079,14 +1175,15 @@
 
     socket.on("turn:end", ({ code }, callback = () => {}) => {
       const room = getRoom(code);
-      const player = room ? getPlayer(room, socket.id) : null;
+      const playerId = getSocketPlayerId(socket);
+      const player = room ? getPlayer(room, playerId) : null;
 
       if (!room || !player) {
         callback({ ok: false, message: "방 정보를 확인할 수 없습니다" });
         return;
       }
 
-      if (room.phase !== "guess" || room.currentPlayerId !== socket.id || !room.canEndTurn) {
+      if (room.phase !== "guess" || room.currentPlayerId !== playerId || !room.canEndTurn) {
         callback({ ok: false, message: "지금 끝낼 수 없습니다" });
         return;
       }
@@ -1103,13 +1200,14 @@
 
     socket.on("game:reset", ({ code }, callback = () => {}) => {
       const room = getRoom(code);
+      const playerId = getSocketPlayerId(socket);
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
         return;
       }
 
-      if (room.hostId !== socket.id) {
+      if (room.hostId !== playerId) {
         callback({ ok: false, message: "호스트만 할 수 있습니다" });
         return;
       }
@@ -1121,7 +1219,8 @@
 
     socket.on("chat:send", ({ code, text }, callback = () => {}) => {
       const room = getRoom(code);
-      const player = room ? getPlayer(room, socket.id) : null;
+      const playerId = getSocketPlayerId(socket);
+      const player = room ? getPlayer(room, playerId) : null;
 
       if (!room || !player) {
         callback({ ok: false, message: "방 정보를 확인할 수 없습니다" });
@@ -1138,9 +1237,27 @@
     });
 
     socket.on("disconnect", () => {
-      removePlayer(socket.id);
+      disconnectPlayerSocket(socket);
     });
   });
+
+  async function restorePersistedRooms() {
+    const snapshots = await roomStore.restoreAll();
+
+    snapshots.forEach((snapshot) => {
+      const room = hydrateRoom(snapshot);
+      rooms.set(room.code, room);
+      restoreRoomPresence(room, disconnectTimers, removePlayer, DISCONNECT_GRACE_MS);
+      persistRoomState(room);
+      scheduleBot(room);
+    });
+
+    if (snapshots.length) {
+      console.log(`[davinci] restored ${snapshots.length} room(s) from Redis`);
+    }
+  }
+
+  return restorePersistedRooms();
 };
 
 

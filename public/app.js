@@ -1,4 +1,9 @@
-const socket = io();
+const appSession = window.GamebniSession.createClient("liar");
+const socket = io({
+  auth: {
+    playerSessionId: appSession.playerSessionId
+  }
+});
 const MIN_PLAYERS = 2;
 const CHAT_BUBBLE_TTL = 5000;
 const REACTION_OPTIONS = [
@@ -18,7 +23,8 @@ const state = {
   turnModalKey: null,
   bubbleTimerId: null,
   phaseClockTimerId: null,
-  reactionPickerPlayerId: null
+  reactionPickerPlayerId: null,
+  restoreAttempted: false
 };
 
 const elements = {
@@ -82,6 +88,11 @@ const elements = {
   closeRoleModalButton: document.getElementById("closeRoleModalButton")
 };
 
+appSession.hydrateEntry({
+  nameInput: elements.nameInput,
+  roomInput: elements.roomInput
+});
+
 const PHASE_TEXT = {
   lobby: "대기",
   discussion: "발언",
@@ -126,6 +137,10 @@ function currentSettings() {
     liarCount: Number(elements.liarCountInput.value),
     voteMode: elements.voteModeInput.value
   };
+}
+
+function rememberSessionRoom(roomCode = state.roomCode, name = currentName()) {
+  appSession.rememberRoom(state.room?.me?.name || name, roomCode);
 }
 
 function playerNameById(id) {
@@ -1084,6 +1099,7 @@ async function createRoom() {
 
   state.roomCode = response.code;
   elements.roomInput.value = response.code;
+  rememberSessionRoom(response.code);
   setEntryStatus("");
 }
 
@@ -1114,7 +1130,41 @@ async function joinRoom() {
   }
 
   state.roomCode = response.code;
+  rememberSessionRoom(response.code);
   setEntryStatus("");
+}
+
+async function restoreSavedRoom() {
+  if (state.restoreAttempted || state.room) {
+    return;
+  }
+
+  const saved = appSession.getSavedRoom();
+  if (!saved?.roomCode) {
+    return;
+  }
+
+  state.restoreAttempted = true;
+
+  if (!currentName() && saved.name) {
+    elements.nameInput.value = saved.name;
+  }
+
+  if (!currentRoomInput()) {
+    elements.roomInput.value = saved.roomCode;
+  }
+
+  const response = await emitWithAck("room:join", {
+    code: currentRoomInput(),
+    name: currentName()
+  });
+
+  if (!response?.ok) {
+    appSession.clearRoom();
+  } else {
+    state.roomCode = response.code;
+    rememberSessionRoom(response.code, currentName());
+  }
 }
 
 socket.on("room:update", (room) => {
@@ -1123,6 +1173,7 @@ socket.on("room:update", (room) => {
   clearFlashStatus();
   state.room = room;
   state.roomCode = room.code;
+  rememberSessionRoom(room.code, room.me?.name || currentName());
   syncTurnModalMode(room);
 
   if (room.phase !== "lobby" && room.phase !== "result" && room.round !== previousRound) {
@@ -1314,3 +1365,9 @@ elements.finalGuessInput.addEventListener("keydown", (event) => {
 });
 
 renderRoom();
+
+if (socket.connected) {
+  restoreSavedRoom();
+} else {
+  socket.on("connect", restoreSavedRoom);
+}

@@ -3,12 +3,29 @@ services:
     name: liar-chat-game
     runtime: node
     region: singapore
-    plan: free
+    plan: starter
     branch: main
     autoDeployTrigger: commit
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /healthz
     envVars:
       - key: NODE_VERSION
         value: 22.22.0
+      - key: NODE_ENV
+        value: production
+      - key: DISCONNECT_GRACE_MS
+        value: "90000"
+      - key: ROOM_STORE_TTL_SECONDS
+        value: "604800"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: liar-chat-game-rooms
+          property: connectionString
+  - type: keyvalue
+    name: liar-chat-game-rooms
+    region: singapore
+    plan: starter
+    ipAllowList: []
+    maxmemoryPolicy: noeviction

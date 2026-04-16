@@ -1,5 +1,17 @@
 module.exports = function attachOmokGame(rootIo) {
   const io = rootIo.of("/omok");
+  const { createRoomStore, normalizeRoomCode, snapshotRoom } = require("./room-store");
+  const {
+    bindPlayerSocket,
+    cancelDisconnect,
+    createPresenceState,
+    getDisconnectGraceMs,
+    getSocketPlayerId,
+    isPlayerConnected,
+    registerSessionNamespace,
+    restoreRoomPresence,
+    schedulePlayerDisconnect
+  } = require("./stability");
 
   const ROOM_CODE_LENGTH = 5;
   const TARGET_PLAYER_COUNT = 2;
@@ -24,6 +36,13 @@ module.exports = function attachOmokGame(rootIo) {
   ];
 
   const rooms = new Map();
+  const disconnectTimers = new Map();
+  const DISCONNECT_GRACE_MS = getDisconnectGraceMs();
+  const roomStore = createRoomStore({
+    gameKey: "omok",
+    serializeRoom: (room) => snapshotRoom(room, { botTimer: null })
+  });
+  registerSessionNamespace(io);
 
   function sanitizeName(value) {
     return String(value || "")
@@ -75,16 +94,17 @@ module.exports = function attachOmokGame(rootIo) {
     return Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
   }
 
-  function createPlayer(id, name, isBot = false) {
+  function createPlayer(id, name, isBot = false, socketId = null) {
     return {
       id,
       name: sanitizeName(name),
       isBot,
-      color: null
+      color: null,
+      ...createPresenceState(isBot ? null : socketId)
     };
   }
 
-  function createRoom(code, hostId, hostName, options = {}) {
+  function createRoom(code, hostId, hostSocketId, hostName, options = {}) {
     const settings = sanitizeSettings(options);
     const room = {
       code,
@@ -92,7 +112,7 @@ module.exports = function attachOmokGame(rootIo) {
       targetPlayerCount: TARGET_PLAYER_COUNT,
       renjuEnabled: settings.renjuEnabled,
       phase: "lobby",
-      players: [createPlayer(hostId, hostName)],
+      players: [createPlayer(hostId, hostName, false, hostSocketId)],
       messages: [],
       board: createEmptyBoard(),
       currentPlayerId: null,
@@ -130,8 +150,36 @@ module.exports = function attachOmokGame(rootIo) {
     return rooms.get(String(code || "").toUpperCase()) || null;
   }
 
+  function hydrateRoom(snapshot) {
+    const room = {
+      ...snapshot,
+      code: normalizeRoomCode(snapshot.code),
+      botTimer: null
+    };
+
+    room.players = (snapshot.players || []).map((player) => ({
+      ...createPresenceState(),
+      ...player
+    }));
+    room.messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+    room.board = Array.isArray(snapshot.board) ? snapshot.board : createEmptyBoard();
+    room.winningLine = Array.isArray(snapshot.winningLine) ? snapshot.winningLine : [];
+    room.recentAction = snapshot.recentAction || null;
+    room.result = snapshot.result || null;
+    room.lastMove = snapshot.lastMove || null;
+    return room;
+  }
+
+  function persistRoomState(room) {
+    roomStore.save(room);
+  }
+
+  function deletePersistedRoom(code) {
+    roomStore.remove(code);
+  }
+
   function getPlayer(room, playerId) {
-    return room.players.find((player) => player.id === playerId) || null;
+    return room.players.find((player) => player.id === playerId || player.socketId === playerId) || null;
   }
 
   function clearBotTimer(room) {
@@ -198,7 +246,9 @@ module.exports = function attachOmokGame(rootIo) {
       isBot: player.isBot,
       isHost: room.hostId === player.id,
       color: player.color,
-      isCurrent: room.currentPlayerId === player.id
+      isCurrent: room.currentPlayerId === player.id,
+      connected: isPlayerConnected(player),
+      disconnectDeadlineAt: player.disconnectDeadlineAt || null
     };
   }
 
@@ -243,6 +293,7 @@ module.exports = function attachOmokGame(rootIo) {
 
   function broadcastRoom(room, options = {}) {
     const { skipBotSchedule = false } = options;
+    persistRoomState(room);
 
     room.players.forEach((player) => {
       if (!player.isBot) {
@@ -765,6 +816,8 @@ module.exports = function attachOmokGame(rootIo) {
   }
 
   function removePlayer(playerId) {
+    cancelDisconnect(disconnectTimers, playerId);
+
     for (const room of rooms.values()) {
       const index = room.players.findIndex((player) => player.id === playerId);
       if (index === -1) {
@@ -776,11 +829,13 @@ module.exports = function attachOmokGame(rootIo) {
 
       if (!room.players.length) {
         rooms.delete(room.code);
+        deletePersistedRoom(room.code);
         return;
       }
 
       if (!room.players.some((player) => !player.isBot)) {
         rooms.delete(room.code);
+        deletePersistedRoom(room.code);
         return;
       }
 
@@ -791,6 +846,30 @@ module.exports = function attachOmokGame(rootIo) {
       }
 
       broadcastRoom(room);
+      return;
+    }
+  }
+
+  function attachSocketToPlayer(room, socket, player) {
+    socket.join(room.code);
+    bindPlayerSocket(io, player, socket, disconnectTimers);
+  }
+
+  function disconnectPlayerSocket(socket) {
+    const playerId = getSocketPlayerId(socket);
+
+    if (!playerId) {
+      return;
+    }
+
+    for (const room of rooms.values()) {
+      const player = room.players.find((candidate) => candidate.id === playerId && !candidate.isBot);
+      if (!player || player.socketId !== socket.id) {
+        continue;
+      }
+
+      schedulePlayerDisconnect(player, disconnectTimers, removePlayer, DISCONNECT_GRACE_MS);
+      broadcastRoom(room, { skipBotSchedule: true });
       return;
     }
   }
@@ -808,16 +887,17 @@ module.exports = function attachOmokGame(rootIo) {
 
     socket.on("room:create", ({ name, settings }, callback = () => {}) => {
       const safeName = sanitizeName(name);
+      const playerId = getSocketPlayerId(socket);
       if (!safeName) {
         callback({ ok: false, message: "닉네임을 입력하세요" });
         return;
       }
 
-      removePlayer(socket.id);
+      removePlayer(playerId);
       leaveJoinedRooms(socket);
 
-      const room = createRoom(generateRoomCode(), socket.id, safeName, settings);
-      socket.join(room.code);
+      const room = createRoom(generateRoomCode(), playerId, socket.id, safeName, settings);
+      attachSocketToPlayer(room, socket, room.players[0]);
       broadcastRoom(room, { skipBotSchedule: true });
       callback({ ok: true, code: room.code });
     });
@@ -825,6 +905,7 @@ module.exports = function attachOmokGame(rootIo) {
     socket.on("room:join", ({ code, name }, callback = () => {}) => {
       const room = getRoom(code);
       const safeName = sanitizeName(name);
+      const playerId = getSocketPlayerId(socket);
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
@@ -836,29 +917,39 @@ module.exports = function attachOmokGame(rootIo) {
         return;
       }
 
+      const reconnectingPlayer = room.players.find((player) => player.id === playerId && !player.isBot);
+      if (reconnectingPlayer) {
+        reconnectingPlayer.name = safeName;
+        leaveJoinedRooms(socket);
+        attachSocketToPlayer(room, socket, reconnectingPlayer);
+        broadcastRoom(room, { skipBotSchedule: true });
+        callback({ ok: true, code: room.code, restored: true });
+        return;
+      }
       if (room.players.length >= TARGET_PLAYER_COUNT) {
         callback({ ok: false, message: "방이 가득 찼습니다" });
         return;
       }
 
-      removePlayer(socket.id);
+      removePlayer(playerId);
       leaveJoinedRooms(socket);
 
-      room.players.push(createPlayer(socket.id, safeName));
-      socket.join(room.code);
+      room.players.push(createPlayer(playerId, safeName, false, socket.id));
+      attachSocketToPlayer(room, socket, room.players[room.players.length - 1]);
       broadcastRoom(room, { skipBotSchedule: true });
       callback({ ok: true, code: room.code });
     });
 
     socket.on("room:add_bots", ({ code, count }, callback = () => {}) => {
       const room = getRoom(code);
+      const playerId = getSocketPlayerId(socket);
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
         return;
       }
 
-      if (room.hostId !== socket.id) {
+      if (room.hostId !== playerId) {
         callback({ ok: false, message: "호스트만 할 수 있습니다" });
         return;
       }
@@ -889,13 +980,14 @@ module.exports = function attachOmokGame(rootIo) {
 
     socket.on("game:start", ({ code }, callback = () => {}) => {
       const room = getRoom(code);
+      const playerId = getSocketPlayerId(socket);
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
         return;
       }
 
-      if (room.hostId !== socket.id) {
+      if (room.hostId !== playerId) {
         callback({ ok: false, message: "호스트만 시작할 수 있습니다" });
         return;
       }
@@ -912,7 +1004,8 @@ module.exports = function attachOmokGame(rootIo) {
 
     socket.on("move:place", ({ code, x, y }, callback = () => {}) => {
       const room = getRoom(code);
-      const player = room ? getPlayer(room, socket.id) : null;
+      const playerId = getSocketPlayerId(socket);
+      const player = room ? getPlayer(room, playerId) : null;
       const column = Number.parseInt(x, 10);
       const row = Number.parseInt(y, 10);
 
@@ -926,7 +1019,7 @@ module.exports = function attachOmokGame(rootIo) {
         return;
       }
 
-      if (room.currentPlayerId !== socket.id) {
+      if (room.currentPlayerId !== playerId) {
         callback({ ok: false, message: "내 차례가 아닙니다" });
         return;
       }
@@ -948,13 +1041,14 @@ module.exports = function attachOmokGame(rootIo) {
 
     socket.on("game:reset", ({ code }, callback = () => {}) => {
       const room = getRoom(code);
+      const playerId = getSocketPlayerId(socket);
 
       if (!room) {
         callback({ ok: false, message: "방을 찾을 수 없습니다" });
         return;
       }
 
-      if (room.hostId !== socket.id) {
+      if (room.hostId !== playerId) {
         callback({ ok: false, message: "호스트만 할 수 있습니다" });
         return;
       }
@@ -966,7 +1060,8 @@ module.exports = function attachOmokGame(rootIo) {
 
     socket.on("chat:send", ({ code, text }, callback = () => {}) => {
       const room = getRoom(code);
-      const player = room ? getPlayer(room, socket.id) : null;
+      const playerId = getSocketPlayerId(socket);
+      const player = room ? getPlayer(room, playerId) : null;
 
       if (!room || !player) {
         callback({ ok: false, message: "방 정보를 확인할 수 없습니다" });
@@ -983,7 +1078,25 @@ module.exports = function attachOmokGame(rootIo) {
     });
 
     socket.on("disconnect", () => {
-      removePlayer(socket.id);
+      disconnectPlayerSocket(socket);
     });
   });
+
+  async function restorePersistedRooms() {
+    const snapshots = await roomStore.restoreAll();
+
+    snapshots.forEach((snapshot) => {
+      const room = hydrateRoom(snapshot);
+      rooms.set(room.code, room);
+      restoreRoomPresence(room, disconnectTimers, removePlayer, DISCONNECT_GRACE_MS);
+      persistRoomState(room);
+      scheduleBot(room);
+    });
+
+    if (snapshots.length) {
+      console.log(`[omok] restored ${snapshots.length} room(s) from Redis`);
+    }
+  }
+
+  return restorePersistedRooms();
 };

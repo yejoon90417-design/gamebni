@@ -1,4 +1,10 @@
 const socket = io("/halli");
+const appSession = window.GamebniSession.createClient("halli");
+socket.auth = {
+  ...(socket.auth || {}),
+  playerSessionId: appSession.playerSessionId
+};
+socket.disconnect().connect();
 const CHAT_BUBBLE_TTL = 5000;
 const TRANSFER_ANIMATION_MS = 900;
 const TRANSFER_STAGGER_MS = 110;
@@ -17,7 +23,8 @@ const state = {
   bubbleTimerId: null,
   lastTransferEffectId: "",
   transferCleanupTimerId: null,
-  bellFrameId: null
+  bellFrameId: null,
+  restoreAttempted: false
 };
 
 const elements = {
@@ -52,6 +59,23 @@ const elements = {
   createRoomButton: document.getElementById("createRoomButton"),
   joinRoomButton: document.getElementById("joinRoomButton")
 };
+
+appSession.hydrateEntry({
+  nameInput: elements.nameInput,
+  roomInput: elements.roomInput
+});
+
+function currentName() {
+  return elements.nameInput.value.trim();
+}
+
+function currentRoomInput() {
+  return elements.roomInput.value.trim().toUpperCase();
+}
+
+function rememberSessionRoom(roomCode = state.roomCode, name = currentName()) {
+  appSession.rememberRoom(state.room?.me?.name || name, roomCode);
+}
 
 const SEAT_POSITIONS = {
   0: [],
@@ -1028,6 +1052,7 @@ function applyRoomUpdate(room, options = {}) {
   room.clientSyncedAt = Date.now();
   state.room = room;
   state.roomCode = room.code;
+  rememberSessionRoom(room.code, room.me?.name || currentName());
   renderRoom();
   playTransferEffect(room.transferEffect);
 
@@ -1065,6 +1090,7 @@ async function createRoom() {
     setEntryStatus("");
     state.roomCode = response.code;
     elements.roomInput.value = response.code;
+    rememberSessionRoom(response.code);
     showPendingGameScreen(response.code);
     const room = response.room || (await syncRoomState(response.code));
     if (room) {
@@ -1097,6 +1123,7 @@ async function joinRoom() {
 
     setEntryStatus("");
     state.roomCode = response.code;
+    rememberSessionRoom(response.code);
     showPendingGameScreen(response.code);
     const room = response.room || (await syncRoomState(response.code));
     if (room) {
@@ -1113,6 +1140,55 @@ async function joinRoom() {
     renderScreens();
     setEntryStatus(`입장 실패: ${error?.message || "알 수 없는 오류"}`);
   }
+}
+
+async function restoreSavedRoom() {
+  if (state.restoreAttempted || state.room || state.pendingJoin) {
+    return;
+  }
+
+  const saved = appSession.getSavedRoom();
+  if (!saved?.roomCode) {
+    return;
+  }
+
+  state.restoreAttempted = true;
+
+  if (!currentName() && saved.name) {
+    elements.nameInput.value = saved.name;
+  }
+
+  if (!currentRoomInput()) {
+    elements.roomInput.value = saved.roomCode;
+  }
+
+  try {
+    const response = await emitWithAck("room:join", {
+      code: currentRoomInput(),
+      name: currentName()
+    });
+
+    if (!response?.ok) {
+      appSession.clearRoom();
+      return;
+    }
+
+    state.roomCode = response.code;
+    rememberSessionRoom(response.code);
+    showPendingGameScreen(response.code);
+    const room = response.room || (await syncRoomState(response.code));
+    if (room) {
+      applyRoomUpdate(room);
+      return;
+    }
+  } catch (_error) {
+    // Fall through to clear stale recovery data.
+  }
+
+  appSession.clearRoom();
+  state.pendingJoin = false;
+  state.room = null;
+  renderScreens();
 }
 
 async function addBots() {
@@ -1260,3 +1336,9 @@ elements.nameInput.addEventListener("keydown", (event) => {
 });
 
 renderRoom();
+
+if (socket.connected) {
+  restoreSavedRoom();
+} else {
+  socket.on("connect", restoreSavedRoom);
+}
