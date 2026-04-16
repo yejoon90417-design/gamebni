@@ -11,6 +11,7 @@
   const BOT_FLIP_DELAY_MAX_MS = 1750;
   const BOT_RING_DELAY_MIN_MS = 850;
   const BOT_RING_DELAY_MAX_MS = 1550;
+  const RING_SUCCESS_GRACE_MS = 240;
   const FRUITS = [
     { key: "banana", label: "바나나" },
     { key: "strawberry", label: "딸기" },
@@ -122,6 +123,7 @@
       recentAction: null,
       transferEffect: null,
       bellMotion: null,
+      bellGraceUntil: 0,
       result: null,
       botTimers: new Set()
     };
@@ -472,6 +474,7 @@
     room.recentAction = null;
     clearTransferEffect(room);
     room.bellMotion = null;
+    room.bellGraceUntil = 0;
     room.result = null;
     room.players.forEach((player) => {
       player.drawPile = [];
@@ -528,12 +531,20 @@
       };
     }
 
+    if (room.bellGraceUntil && Date.now() <= room.bellGraceUntil) {
+      return {
+        ok: false,
+        message: "방금 처리된 종입니다"
+      };
+    }
+
     clearBotTimers(room);
 
     const fruit = exactFiveFruit(room);
     if (fruit) {
       const collected = awardFaceUpCards(room, player);
       setTransferEffect(room, "collect", collected.transfers);
+      room.bellGraceUntil = Date.now() + RING_SUCCESS_GRACE_MS;
       room.currentPlayerId = player.id;
       room.lastFlipperId = null;
       pushSystemMessage(
@@ -550,6 +561,7 @@
     }
 
     const penalty = applyFalseBellPenalty(room, player);
+    room.bellGraceUntil = 0;
     setTransferEffect(room, "penalty", penalty.transfers);
     pushSystemMessage(room, `${player.name} 오판 · 패널티 ${penalty.count}장`);
 
