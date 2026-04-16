@@ -5,6 +5,7 @@ const { Server } = require("socket.io");
 const TOPIC_WORDS = require("./data/topics");
 const attachBangGame = require("./bang-game");
 const attachDavinciGame = require("./davinci-game");
+const attachHalliGame = require("./halli-game");
 const attachOmokGame = require("./omok-game");
 
 const PORT = process.env.PORT || 3000;
@@ -50,6 +51,16 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+app.use((request, response, next) => {
+  if (request.path === "/halli" || request.path === "/halli/" || request.path.startsWith("/halli/")) {
+    response.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    response.set("Pragma", "no-cache");
+    response.set("Expires", "0");
+  }
+
+  next();
+});
+
 app.get("/healthz", (_request, response) => {
   response.status(200).json({ ok: true });
 });
@@ -70,10 +81,15 @@ app.get(["/omok", "/omok/"], (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "omok", "index.html"));
 });
 
+app.get(["/halli", "/halli/"], (_request, response) => {
+  response.sendFile(path.join(__dirname, "public", "halli", "index.html"));
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 attachBangGame(io);
 attachDavinciGame(io);
+attachHalliGame(io);
 attachOmokGame(io);
 
 function sanitizeName(value) {

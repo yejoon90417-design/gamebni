@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Omok</title>
-    <link rel="stylesheet" href="/omok/styles.css" />
+    <title>Halli Galli</title>
+    <link rel="stylesheet" href="/halli/styles.css?v=22" />
   </head>
   <body>
     <div class="app">
       <section class="screen screen-entry" id="entryScreen">
         <div class="entry-shell">
           <div class="brand">
-            <span class="brand-mark">O</span>
-            <span>OMOK</span>
+            <span class="brand-mark">H</span>
+            <span>HALLI</span>
           </div>
 
           <section class="entry-form">
@@ -20,8 +20,8 @@
               <a class="button-link button-secondary" href="/">LIAR</a>
               <a class="button-link button-secondary" href="/bang/">BANG</a>
               <a class="button-link button-secondary" href="/davinci/">DAVINCI</a>
-              <button type="button" disabled>OMOK</button>
-              <a class="button-link button-secondary" href="/halli/">HALLI</a>
+              <a class="button-link button-secondary" href="/omok/">OMOK</a>
+              <button type="button" disabled>HALLI</button>
             </div>
 
             <div class="field-group">
@@ -30,17 +30,21 @@
             </div>
 
             <div class="field-group">
-              <label for="renjuRuleInput">규칙</label>
-              <select id="renjuRuleInput">
-                <option value="off" selected>일반 오목</option>
-                <option value="on">렌주룰</option>
+              <label for="targetPlayerCountInput">최대 인원</label>
+              <select id="targetPlayerCountInput">
+                <option value="2">2명</option>
+                <option value="3">3명</option>
+                <option value="4" selected>4명</option>
+                <option value="5">5명</option>
+                <option value="6">6명</option>
               </select>
             </div>
 
             <div class="field-group">
               <label>기본 규칙</label>
               <div class="guide-box" id="ruleGuide">
-                2인 전용. 흑과 백이 번갈아 두고 먼저 5목을 만들면 승리합니다.
+                차례대로 카드를 뒤집고, 공개된 카드들 중 같은 과일의 합이 정확히 5가 되면 먼저 종을 칩니다.
+                맞히면 공개 카드 전체를 가져가고, 틀리면 다른 플레이어마다 1장씩 나눠줍니다.
               </div>
             </div>
 
@@ -63,23 +67,22 @@
         <header class="game-topbar">
           <div class="topbar-left">
             <div class="brand">
-              <span class="brand-mark">O</span>
-              <span>OMOK</span>
+              <span class="brand-mark">H</span>
+              <span>HALLI</span>
             </div>
             <div class="chip" id="roomBadge">-</div>
             <div class="chip" id="playerBadge">-</div>
-            <div class="chip" id="ruleBadge">-</div>
             <div class="chip" id="phaseBadge">-</div>
             <div class="chip chip-status" id="statusBadge">-</div>
           </div>
 
           <div class="topbar-actions">
             <div class="bot-tools" id="botTools" hidden>
-              <input id="botCountInput" type="number" min="1" max="1" value="1" />
+              <input id="botCountInput" type="number" min="1" max="4" value="1" />
               <button id="addBotButton" class="button-secondary" type="button">봇 추가</button>
             </div>
             <button id="startButton" type="button" hidden>시작</button>
-            <button id="resetButton" type="button" hidden>다음 판</button>
+            <button id="resetButton" type="button" hidden>대기실로</button>
           </div>
         </header>
 
@@ -95,20 +98,19 @@
 
           <section class="table-panel">
             <div class="table-stage" id="tableStage">
-              <section class="seat-band seat-band-top" id="topSeat"></section>
+              <div class="seat-layer" id="seatLayer"></div>
 
-              <section class="board-area" id="boardArea">
-                <div class="center-card" id="centerCard">
-                  <p class="center-status" id="centerStatus">-</p>
-                  <p class="center-action" id="centerAction" hidden></p>
-                </div>
-
-                <div class="board-shell" id="boardShell">
-                  <div class="board-grid" id="boardGrid"></div>
-                </div>
+              <section class="center-zone">
+                <button id="bellButton" class="bell-button" type="button">
+                  <span class="bell-icon">BELL</span>
+                  <span class="bell-label">종 치기</span>
+                </button>
               </section>
 
-              <section class="seat-band seat-band-bottom" id="bottomSeat"></section>
+              <section class="self-dock">
+                <button id="flipButton" type="button">카드 뒤집기</button>
+                <section class="self-seat-area" id="selfSeatArea"></section>
+              </section>
 
               <section class="seat-chat-composer" id="seatChatComposer" hidden>
                 <form class="seat-chat-form" id="chatForm">
@@ -135,6 +137,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/omok/app.js"></script>
+    <script src="/halli/app.js?v=21"></script>
   </body>
 </html>
