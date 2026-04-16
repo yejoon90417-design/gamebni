@@ -83,7 +83,8 @@ const elements = {
   guessCancelButton: document.getElementById("guessCancelButton"),
   guessStatus: document.getElementById("guessStatus"),
   createRoomButton: document.getElementById("createRoomButton"),
-  joinRoomButton: document.getElementById("joinRoomButton")
+  joinRoomButton: document.getElementById("joinRoomButton"),
+  leaveButton: document.getElementById("leaveButton")
 };
 
 appSession.hydrateEntry({
@@ -993,6 +994,54 @@ async function restoreSavedRoom() {
   rememberSessionRoom(response.code);
 }
 
+function resetLocalRoomState(message = "방을 나갔습니다") {
+  appSession.clearRoom();
+  clearRouletteTimer();
+  closeGuessModal({ preserveStatus: false });
+
+  if (state.bubbleTimerId) {
+    clearTimeout(state.bubbleTimerId);
+    state.bubbleTimerId = null;
+  }
+
+  state.room = null;
+  state.roomCode = "";
+  state.selectedTargetPlayerId = null;
+  state.selectedTargetTileId = null;
+  state.selectedPenaltyTileId = null;
+  state.flash = "";
+  state.chatStatus = "";
+  state.guessStatus = "";
+  state.lastChatLogMessageId = "";
+  state.chatIsComposing = false;
+  state.pendingRoomUpdate = null;
+  state.rouletteShownId = "";
+  state.rouletteActive = false;
+  state.rouletteSpinning = false;
+  state.rouletteRotation = 0;
+  state.rouletteWinnerId = "";
+  state.guessModalOpen = false;
+  state.guessType = "number";
+  elements.roomInput.value = "";
+  elements.chatInput.value = "";
+  renderRoom();
+  setEntryStatus(message);
+}
+
+async function leaveRoom() {
+  const response = await emitWithAck("room:leave", {
+    code: state.roomCode
+  });
+
+  if (!response?.ok) {
+    state.flash = response?.message || "방 나가기에 실패했습니다";
+    renderRoom();
+    return;
+  }
+
+  resetLocalRoomState();
+}
+
 async function addBots() {
   const response = await emitWithAck("room:add_bots", {
     code: state.roomCode,
@@ -1078,6 +1127,7 @@ async function takeDraw(color = null) {
 
 elements.createRoomButton.addEventListener("click", createRoom);
 elements.joinRoomButton.addEventListener("click", joinRoom);
+elements.leaveButton.addEventListener("click", leaveRoom);
 elements.addBotButton.addEventListener("click", addBots);
 elements.targetPlayerCountSelect.addEventListener("change", renderRuleGuide);
 elements.chatForm.addEventListener("submit", sendChat);

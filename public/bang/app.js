@@ -92,7 +92,8 @@ const elements = {
   cardZoomMeta: document.getElementById("cardZoomMeta"),
   cardZoomDescription: document.getElementById("cardZoomDescription"),
   createRoomButton: document.getElementById("createRoomButton"),
-  joinRoomButton: document.getElementById("joinRoomButton")
+  joinRoomButton: document.getElementById("joinRoomButton"),
+  leaveButton: document.getElementById("leaveButton")
 };
 
 appSession.hydrateEntry({
@@ -1939,6 +1940,40 @@ function queueResponsiveRender() {
   });
 }
 
+function resetLocalRoomState(message = "방을 나갔습니다") {
+  appSession.clearRoom();
+
+  if (state.bannerTimer) {
+    clearTimeout(state.bannerTimer);
+    state.bannerTimer = null;
+  }
+
+  if (responsiveRenderFrame) {
+    cancelAnimationFrame(responsiveRenderFrame);
+    responsiveRenderFrame = null;
+  }
+
+  state.room = null;
+  state.previousRoom = null;
+  state.roomCode = "";
+  state.selectedCardId = null;
+  state.selectedTargetId = null;
+  state.inspectedCard = null;
+  state.focusPlayerId = null;
+  state.detailHidden = true;
+  state.flash = "";
+  state.introSeenKey = "";
+  state.abilityMode = null;
+  state.abilitySelectedCardIds = [];
+  elements.roomInput.value = "";
+  elements.introModal.hidden = true;
+  elements.detailPanel.hidden = true;
+  elements.abilityModal.hidden = true;
+  elements.cardZoomModal.hidden = true;
+  renderRoom();
+  setEntryStatus(message);
+}
+
 async function createRoom() {
   const response = await emitWithAck("room:create", {
     name: elements.nameInput.value.trim(),
@@ -2000,6 +2035,19 @@ async function restoreSavedRoom() {
   rememberSessionRoom(response.code);
 }
 
+async function leaveRoom() {
+  const response = await emitWithAck("room:leave", {
+    code: state.roomCode
+  });
+
+  if (!response?.ok) {
+    setFlash(response?.message || "방 나가기에 실패했습니다");
+    return;
+  }
+
+  resetLocalRoomState();
+}
+
 async function addBot() {
   const response = await emitWithAck("room:add_bots", {
     code: state.roomCode,
@@ -2057,6 +2105,7 @@ socket.on("room:update", (room) => {
 
 elements.createRoomButton.addEventListener("click", createRoom);
 elements.joinRoomButton.addEventListener("click", joinRoom);
+elements.leaveButton.addEventListener("click", leaveRoom);
 elements.addBotButton.addEventListener("click", addBot);
 elements.introCloseButton.addEventListener("click", () => {
   state.introSeenKey = introSummaryKey(state.room);

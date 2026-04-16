@@ -1020,6 +1020,19 @@ function disconnectPlayerSocket(socket) {
   }
 }
 
+function leaveRoomForSocket(socket) {
+  const playerId = getSocketPlayerId(socket);
+
+  if (!playerId) {
+    leaveJoinedRooms(socket);
+    return;
+  }
+
+  cancelDisconnect(disconnectTimers, playerId);
+  removePlayer(playerId);
+  leaveJoinedRooms(socket);
+}
+
 function removePlayer(playerId) {
   cancelDisconnect(disconnectTimers, playerId);
 
@@ -1111,6 +1124,11 @@ io.on("connection", (socket) => {
     attachSocketToPlayer(room, socket, room.players[room.players.length - 1]);
     syncRoom(room);
     callback({ ok: true, code: room.code });
+  });
+
+  socket.on("room:leave", (_payload = {}, callback = () => {}) => {
+    leaveRoomForSocket(socket);
+    callback({ ok: true });
   });
 
   socket.on("round:start", ({ code }, callback = () => {}) => {

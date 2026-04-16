@@ -902,6 +902,19 @@ function disconnectPlayerSocket(socket) {
   }
 }
 
+function leaveRoomForSocket(socket) {
+  const playerId = getSocketPlayerId(socket);
+
+  if (!playerId) {
+    leaveJoinedRooms(socket);
+    return;
+  }
+
+  cancelDisconnect(disconnectTimers, playerId);
+  removePlayer(playerId);
+  leaveJoinedRooms(socket);
+}
+
 io.on("connection", (socket) => {
     socket.join(socket.id);
 
@@ -964,6 +977,11 @@ io.on("connection", (socket) => {
       attachSocketToPlayer(room, socket, room.players[room.players.length - 1]);
       broadcastRoom(room, { skipFlow: true });
       callback({ ok: true, code: room.code, room: serializeRoom(room, playerId) });
+    });
+
+    socket.on("room:leave", (_payload = {}, callback = () => {}) => {
+      leaveRoomForSocket(socket);
+      callback({ ok: true });
     });
 
     socket.on("room:state", ({ code }, callback = () => {}) => {

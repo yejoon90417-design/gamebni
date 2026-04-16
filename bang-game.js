@@ -1482,6 +1482,19 @@ function disconnectPlayerSocket(socket) {
   }
 }
 
+function leaveRoomForSocket(socket) {
+  const playerId = getSocketPlayerId(socket);
+
+  if (!playerId) {
+    leaveJoinedRooms(socket);
+    return;
+  }
+
+  cancelDisconnect(disconnectTimers, playerId);
+  removePlayer(playerId);
+  leaveJoinedRooms(socket);
+}
+
 function leaveJoinedRooms(socket) {
   for (const roomName of socket.rooms) {
     if (roomName !== socket.id) {
@@ -1696,6 +1709,11 @@ io.on("connection", (socket) => {
     attachSocketToPlayer(room, socket, room.players[room.players.length - 1]);
     broadcastRoom(room);
     callback({ ok: true, code: room.code });
+  });
+
+  socket.on("room:leave", (_payload = {}, callback = () => {}) => {
+    leaveRoomForSocket(socket);
+    callback({ ok: true });
   });
 
   socket.on("room:add_bots", ({ code, count }, callback = () => {}) => {

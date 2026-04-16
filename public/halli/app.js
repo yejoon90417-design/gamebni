@@ -57,7 +57,8 @@ const elements = {
   sendChatButton: document.getElementById("sendChatButton"),
   chatStatus: document.getElementById("chatStatus"),
   createRoomButton: document.getElementById("createRoomButton"),
-  joinRoomButton: document.getElementById("joinRoomButton")
+  joinRoomButton: document.getElementById("joinRoomButton"),
+  leaveButton: document.getElementById("leaveButton")
 };
 
 appSession.hydrateEntry({
@@ -1191,6 +1192,55 @@ async function restoreSavedRoom() {
   renderScreens();
 }
 
+function resetLocalRoomState(message = "방을 나갔습니다") {
+  appSession.clearRoom();
+
+  if (state.bubbleTimerId) {
+    clearTimeout(state.bubbleTimerId);
+    state.bubbleTimerId = null;
+  }
+
+  if (state.transferCleanupTimerId) {
+    clearTimeout(state.transferCleanupTimerId);
+    state.transferCleanupTimerId = null;
+  }
+
+  if (state.bellFrameId) {
+    window.cancelAnimationFrame(state.bellFrameId);
+    state.bellFrameId = null;
+  }
+
+  clearTransferEffects();
+  state.room = null;
+  state.roomCode = "";
+  state.flash = "";
+  state.chatStatus = "";
+  state.lastChatLogMessageId = "";
+  state.chatIsComposing = false;
+  state.pendingRoomUpdate = null;
+  state.pendingJoin = false;
+  state.lastTransferEffectId = "";
+  elements.roomInput.value = "";
+  elements.chatInput.value = "";
+  renderRoom();
+  renderBellMotion();
+  setEntryStatus(message);
+}
+
+async function leaveRoom() {
+  const response = await emitWithAck("room:leave", {
+    code: state.roomCode
+  });
+
+  if (!response?.ok) {
+    state.flash = response?.message || "방 나가기에 실패했습니다";
+    renderRoom();
+    return;
+  }
+
+  resetLocalRoomState();
+}
+
 async function addBots() {
   const response = await emitWithAck("room:add_bots", {
     code: state.roomCode,
@@ -1282,6 +1332,7 @@ async function sendChat(event) {
 
 elements.createRoomButton.addEventListener("click", createRoom);
 elements.joinRoomButton.addEventListener("click", joinRoom);
+elements.leaveButton.addEventListener("click", leaveRoom);
 elements.addBotButton.addEventListener("click", addBots);
 elements.startButton.addEventListener("click", startGame);
 elements.resetButton.addEventListener("click", resetGame);

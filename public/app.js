@@ -81,6 +81,7 @@ const elements = {
   reasonLabel: document.getElementById("reasonLabel"),
   createRoomButton: document.getElementById("createRoomButton"),
   joinRoomButton: document.getElementById("joinRoomButton"),
+  leaveButton: document.getElementById("leaveButton"),
   roleModal: document.getElementById("roleModal"),
   modalRoleTitle: document.getElementById("modalRoleTitle"),
   modalTopicLabel: document.getElementById("modalTopicLabel"),
@@ -1086,6 +1087,35 @@ function renderRoom() {
   schedulePhaseClock(state.room);
 }
 
+function resetLocalRoomState(message = "방을 나갔습니다") {
+  appSession.clearRoom();
+
+  if (state.bubbleTimerId) {
+    clearTimeout(state.bubbleTimerId);
+    state.bubbleTimerId = null;
+  }
+
+  if (state.phaseClockTimerId) {
+    clearTimeout(state.phaseClockTimerId);
+    state.phaseClockTimerId = null;
+  }
+
+  state.room = null;
+  state.roomCode = "";
+  state.flashStatus = "";
+  state.roleModalRound = null;
+  state.dismissedRoleModalRound = null;
+  state.turnModalMode = null;
+  state.turnModalKey = null;
+  state.reactionPickerPlayerId = null;
+  elements.roomInput.value = "";
+  elements.turnModal.hidden = true;
+  elements.finalGuessModal.hidden = true;
+  elements.roleModal.hidden = true;
+  renderRoom();
+  setEntryStatus(message);
+}
+
 async function createRoom() {
   const response = await emitWithAck("room:create", {
     name: currentName(),
@@ -1132,6 +1162,19 @@ async function joinRoom() {
   state.roomCode = response.code;
   rememberSessionRoom(response.code);
   setEntryStatus("");
+}
+
+async function leaveRoom() {
+  const response = await emitWithAck("room:leave", {
+    code: state.roomCode
+  });
+
+  if (!response?.ok) {
+    setFlashStatus(response?.message || "방 나가기에 실패했습니다");
+    return;
+  }
+
+  resetLocalRoomState();
 }
 
 async function restoreSavedRoom() {
@@ -1216,6 +1259,7 @@ socket.on("reaction:show", (payload) => {
 
 elements.createRoomButton.addEventListener("click", createRoom);
 elements.joinRoomButton.addEventListener("click", joinRoom);
+elements.leaveButton.addEventListener("click", leaveRoom);
 elements.seatMap.addEventListener("click", () => {
   if (!state.reactionPickerPlayerId) {
     return;
