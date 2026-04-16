@@ -435,6 +435,11 @@
     };
   }
 
+  function eliminatePlayer(player) {
+    player.drawPile = [];
+    player.faceUpPile = [];
+  }
+
   function endByCardCount(room, reason) {
     clearAllTimers(room);
     room.phase = "result";
@@ -557,6 +562,34 @@
       }
 
       setRecentAction(room, `${player.name} 종 성공 · ${fruitLabel(fruit)} 5`, "success");
+      return { ok: true };
+    }
+
+    if (!player.drawPile.length) {
+      room.bellGraceUntil = 0;
+      clearTransferEffect(room);
+      eliminatePlayer(player);
+      pushSystemMessage(room, `${player.name} 오판 · 카드 없음 · 즉시 탈락`);
+
+      if (finishIfGameOver(room, `${player.name} 즉시 탈락`)) {
+        return { ok: true };
+      }
+
+      const currentPlayer = getPlayer(room, room.currentPlayerId);
+      const nextPlayer =
+        currentPlayer && canFlip(currentPlayer)
+          ? currentPlayer
+          : currentPlayer
+            ? nextFlippableAfter(room, currentPlayer.id)
+            : nextFlippablePlayer(room);
+
+      if (!nextPlayer) {
+        endByCardCount(room, `${player.name} 즉시 탈락`);
+        return { ok: true };
+      }
+
+      room.currentPlayerId = nextPlayer.id;
+      setRecentAction(room, `${player.name} 즉시 탈락 · ${nextPlayer.name} 차례`, "danger");
       return { ok: true };
     }
 
