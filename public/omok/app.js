@@ -29,8 +29,12 @@ const elements = {
   startButton: document.getElementById("startButton"),
   resetButton: document.getElementById("resetButton"),
   chatLogList: document.getElementById("chatLogList"),
+  tableStage: document.getElementById("tableStage"),
   topSeat: document.getElementById("topSeat"),
   bottomSeat: document.getElementById("bottomSeat"),
+  boardArea: document.getElementById("boardArea"),
+  centerCard: document.getElementById("centerCard"),
+  boardShell: document.getElementById("boardShell"),
   boardGrid: document.getElementById("boardGrid"),
   centerStatus: document.getElementById("centerStatus"),
   centerAction: document.getElementById("centerAction"),
@@ -239,6 +243,7 @@ function scheduleBubbleRefresh(room) {
     const shouldRestoreChatFocus = document.activeElement === elements.chatInput;
     renderSeats();
     renderSeatChatComposer();
+    syncBoardLayout();
     if (shouldRestoreChatFocus) {
       focusChatInput();
     }
@@ -464,6 +469,44 @@ function renderSeatChatComposer() {
   elements.seatChatComposer.style.transform = "";
 }
 
+function syncBoardLayout() {
+  if (!state.room || elements.gameScreen.hidden) {
+    return;
+  }
+
+  const stageRect = elements.tableStage.getBoundingClientRect();
+  const topSeatRect = elements.topSeat.getBoundingClientRect();
+  const bottomSeatRect = elements.bottomSeat.getBoundingClientRect();
+  const boardAreaRect = elements.boardArea.getBoundingClientRect();
+  const centerCardRect = elements.centerCard.getBoundingClientRect();
+
+  if (!stageRect.width || !stageRect.height || !boardAreaRect.width) {
+    return;
+  }
+
+  const stageStyles = window.getComputedStyle(elements.tableStage);
+  const boardAreaStyles = window.getComputedStyle(elements.boardArea);
+  const stagePaddingY =
+    (Number.parseFloat(stageStyles.paddingTop) || 0) +
+    (Number.parseFloat(stageStyles.paddingBottom) || 0);
+  const stageRowGap = Number.parseFloat(stageStyles.rowGap || stageStyles.gap) || 0;
+  const boardAreaGap = Number.parseFloat(boardAreaStyles.rowGap || boardAreaStyles.gap) || 0;
+
+  const availableHeight =
+    stageRect.height -
+    stagePaddingY -
+    stageRowGap * 2 -
+    topSeatRect.height -
+    bottomSeatRect.height -
+    boardAreaGap -
+    centerCardRect.height -
+    8;
+  const availableWidth = boardAreaRect.width - 8;
+  const nextSize = Math.max(260, Math.min(availableHeight, availableWidth, 720));
+
+  elements.boardShell.style.width = `${Math.floor(nextSize)}px`;
+}
+
 function renderBoard() {
   if (!state.room) {
     elements.boardGrid.innerHTML = "";
@@ -542,6 +585,7 @@ function renderRoom() {
   renderSeats();
   renderSeatChatComposer();
   renderBoard();
+  window.requestAnimationFrame(syncBoardLayout);
   scheduleBubbleRefresh(state.room);
 }
 
@@ -731,6 +775,10 @@ elements.nameInput.addEventListener("keydown", (event) => {
   }
 
   createRoom();
+});
+
+window.addEventListener("resize", () => {
+  syncBoardLayout();
 });
 
 renderRoom();
