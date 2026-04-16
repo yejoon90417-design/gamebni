@@ -372,6 +372,8 @@ label {
   flex: 0 0 128px;
   pointer-events: auto;
   z-index: 1;
+  grid-area: flip;
+  align-self: end;
 }
 
 .self-dock {
@@ -381,10 +383,15 @@ label {
   transform: translateX(-50%);
   max-width: calc(100% - 36px);
   z-index: 3;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 128px 104px;
+  grid-template-areas:
+    "flip seat"
+    "chat chat";
+  align-items: end;
+  justify-items: center;
+  column-gap: 12px;
+  row-gap: 10px;
 }
 
 .self-seat-area {
@@ -392,6 +399,7 @@ label {
   flex: 0 0 104px;
   display: flex;
   justify-content: center;
+  grid-area: seat;
 }
 
 .player-seat {
@@ -408,7 +416,7 @@ label {
 .seat-frame {
   position: relative;
   display: grid;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   justify-items: center;
   padding: 0;
@@ -424,6 +432,30 @@ label {
 
 .player-seat.is-eliminated .seat-frame {
   opacity: 0.5;
+}
+
+.seat-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  max-width: 116px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid #111111;
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+}
+
+.self-seat-area .seat-name {
+  max-width: 132px;
 }
 
 .card-preview {
@@ -615,15 +647,30 @@ label {
 }
 
 .seat-chat-composer {
-  margin-top: 10px;
+  grid-area: chat;
+  width: min(340px, calc(100vw - 48px));
   display: grid;
   gap: 8px;
+  margin-top: 0;
 }
 
 .seat-chat-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 10px;
+  align-items: stretch;
+}
+
+#chatInput {
+  min-width: 0;
+  height: 46px;
+  padding: 0 14px;
+}
+
+#sendChatButton {
+  width: 88px;
+  height: 46px;
+  padding: 0;
 }
 
 .chat-status {
@@ -631,6 +678,7 @@ label {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+  text-align: center;
 }
 
 @keyframes halli-current-pulse {

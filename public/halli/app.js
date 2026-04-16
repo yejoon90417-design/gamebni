@@ -40,6 +40,7 @@ const elements = {
   chatLogList: document.getElementById("chatLogList"),
   tableStage: document.getElementById("tableStage"),
   seatLayer: document.getElementById("seatLayer"),
+  selfDock: document.getElementById("selfDock"),
   selfSeatArea: document.getElementById("selfSeatArea"),
   bellButton: document.getElementById("bellButton"),
   flipButton: document.getElementById("flipButton"),
@@ -873,11 +874,16 @@ function createSeat(player, options = {}) {
   const frame = document.createElement("div");
   frame.className = "seat-frame";
 
+  const name = document.createElement("strong");
+  name.className = "seat-name";
+  name.textContent = player.name;
+
   const remaining = document.createElement("strong");
   remaining.className = "seat-remaining";
   remaining.textContent = `남은 ${player.drawCount}장`;
 
   frame.append(
+    name,
     createCardPreview(player.topCard, {
       stackCount: player.faceUpCount
     }),
@@ -935,8 +941,7 @@ function renderSeatChatComposer() {
     return;
   }
 
-  const selfSeat = elements.selfSeatArea.querySelector(".player-seat.is-self");
-  if (!selfSeat) {
+  if (!elements.selfDock) {
     elements.seatChatComposer.hidden = true;
     return;
   }
@@ -946,20 +951,22 @@ function renderSeatChatComposer() {
   elements.sendChatButton.disabled = false;
   elements.chatStatus.textContent = state.chatStatus;
 
-  if (elements.seatChatComposer.parentElement !== selfSeat) {
-    selfSeat.appendChild(elements.seatChatComposer);
+  if (elements.seatChatComposer.parentElement !== elements.selfDock) {
+    elements.selfDock.appendChild(elements.seatChatComposer);
   }
 }
 
 function renderActionButtons() {
   const me = state.room?.me;
+  const hasFieldCards = Boolean(state.room?.players?.some((player) => player.faceUpCount > 0));
   const canFlip =
     state.room?.phase === "playing" &&
     isMyTurn() &&
     Boolean(me?.drawCount);
   const canRing =
     state.room?.phase === "playing" &&
-    !me?.isEliminated;
+    !me?.isEliminated &&
+    hasFieldCards;
 
   elements.flipButton.disabled = !canFlip;
   elements.bellButton.disabled = !canRing;
