@@ -502,7 +502,7 @@ function syncBoardLayout() {
     centerCardRect.height -
     8;
   const availableWidth = boardAreaRect.width - 8;
-  const nextSize = Math.max(260, Math.min(availableHeight, availableWidth, 720));
+  const nextSize = Math.max(260, Math.min(availableHeight, availableWidth, 820));
 
   elements.boardShell.style.width = `${Math.floor(nextSize)}px`;
 }
