@@ -8,6 +8,10 @@ module.exports = function attachOmokGame(rootIo) {
   const WIN_LENGTH = 5;
   const BOT_DELAY_MS = 700;
   const COLORS = ["black", "white"];
+  const RULE_TEXT = {
+    normal: "일반 오목",
+    renju: "렌주룰"
+  };
   const COLOR_TEXT = {
     black: "흑",
     white: "백"
@@ -33,6 +37,12 @@ module.exports = function attachOmokGame(rootIo) {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, MAX_CHAT_LENGTH);
+  }
+
+  function sanitizeSettings(input = {}) {
+    return {
+      renjuEnabled: Boolean(input.renjuEnabled)
+    };
   }
 
   function randomItem(list) {
@@ -74,11 +84,13 @@ module.exports = function attachOmokGame(rootIo) {
     };
   }
 
-  function createRoom(code, hostId, hostName) {
+  function createRoom(code, hostId, hostName, options = {}) {
+    const settings = sanitizeSettings(options);
     const room = {
       code,
       hostId,
       targetPlayerCount: TARGET_PLAYER_COUNT,
+      renjuEnabled: settings.renjuEnabled,
       phase: "lobby",
       players: [createPlayer(hostId, hostName)],
       messages: [],
@@ -197,6 +209,7 @@ module.exports = function attachOmokGame(rootIo) {
       code: room.code,
       phase: room.phase,
       hostId: room.hostId,
+      renjuEnabled: room.renjuEnabled,
       targetPlayerCount: room.targetPlayerCount,
       currentPlayerId: room.currentPlayerId,
       boardSize: BOARD_SIZE,
@@ -279,6 +292,21 @@ module.exports = function attachOmokGame(rootIo) {
     return [...negative, { x, y }, ...positive];
   }
 
+  function lineLength(board, x, y, color, dx, dy) {
+    return lineThrough(board, x, y, color, dx, dy).length;
+  }
+
+  function findExactFiveLine(board, x, y, color) {
+    for (const [dx, dy] of DIRECTIONS) {
+      const line = lineThrough(board, x, y, color, dx, dy);
+      if (line.length === WIN_LENGTH) {
+        return line;
+      }
+    }
+
+    return null;
+  }
+
   function findWinningLine(board, x, y, color) {
     for (const [dx, dy] of DIRECTIONS) {
       const line = lineThrough(board, x, y, color, dx, dy);
@@ -288,6 +316,130 @@ module.exports = function attachOmokGame(rootIo) {
     }
 
     return null;
+  }
+
+  function hasOverline(board, x, y, color) {
+    return DIRECTIONS.some(([dx, dy]) => lineLength(board, x, y, color, dx, dy) > WIN_LENGTH);
+  }
+
+  function collectWinningExtensions(board, anchorX, anchorY, color, dx, dy) {
+    const empties = new Map();
+    const enemy = otherColor(color);
+
+    for (let start = -4; start <= 0; start += 1) {
+      let ownCount = 0;
+      let blocked = false;
+      const emptyCells = [];
+
+      for (let offset = 0; offset < WIN_LENGTH; offset += 1) {
+        const x = anchorX + (start + offset) * dx;
+        const y = anchorY + (start + offset) * dy;
+
+        if (!insideBoard(x, y)) {
+          blocked = true;
+          break;
+        }
+
+        const cell = board[y][x];
+        if (cell === enemy) {
+          blocked = true;
+          break;
+        }
+
+        if (cell === color) {
+          ownCount += 1;
+        } else if (cell === null) {
+          emptyCells.push({ x, y });
+        }
+      }
+
+      if (!blocked && ownCount === WIN_LENGTH - 1 && emptyCells.length === 1) {
+        const empty = emptyCells[0];
+        empties.set(`${empty.x}:${empty.y}`, empty);
+      }
+    }
+
+    return [...empties.values()];
+  }
+
+  function countFours(board, x, y, color) {
+    return DIRECTIONS.reduce((count, [dx, dy]) => {
+      return count + (collectWinningExtensions(board, x, y, color, dx, dy).length > 0 ? 1 : 0);
+    }, 0);
+  }
+
+  function createsLegalStraightFour(board, x, y, candidateX, candidateY, color, dx, dy, renjuEnabled) {
+    if (!insideBoard(candidateX, candidateY) || board[candidateY][candidateX] !== null) {
+      return false;
+    }
+
+    board[candidateY][candidateX] = color;
+
+    const exactFive = Boolean(findExactFiveLine(board, candidateX, candidateY, color));
+    const straightFour = collectWinningExtensions(board, x, y, color, dx, dy).length >= 2;
+    const illegalForBlack =
+      renjuEnabled &&
+      color === "black" &&
+      (hasOverline(board, candidateX, candidateY, color) || countFours(board, candidateX, candidateY, color) >= 2);
+
+    board[candidateY][candidateX] = null;
+    return !exactFive && straightFour && !illegalForBlack;
+  }
+
+  function countOpenThrees(board, x, y, color, renjuEnabled) {
+    return DIRECTIONS.reduce((count, [dx, dy]) => {
+      for (let step = -4; step <= 4; step += 1) {
+        const candidateX = x + step * dx;
+        const candidateY = y + step * dy;
+
+        if (
+          createsLegalStraightFour(board, x, y, candidateX, candidateY, color, dx, dy, renjuEnabled)
+        ) {
+          return count + 1;
+        }
+      }
+
+      return count;
+    }, 0);
+  }
+
+  function forbiddenType(board, x, y, color, renjuEnabled) {
+    if (!renjuEnabled || color !== "black") {
+      return null;
+    }
+
+    if (findExactFiveLine(board, x, y, color)) {
+      return null;
+    }
+
+    if (hasOverline(board, x, y, color)) {
+      return "장목";
+    }
+
+    if (countFours(board, x, y, color) >= 2) {
+      return "44";
+    }
+
+    if (countOpenThrees(board, x, y, color, renjuEnabled) >= 2) {
+      return "33";
+    }
+
+    return null;
+  }
+
+  function simulateMoveResult(board, x, y, color, renjuEnabled) {
+    board[y][x] = color;
+    const exactFiveLine = findExactFiveLine(board, x, y, color);
+    const forbidden = forbiddenType(board, x, y, color, renjuEnabled);
+    const winningLine =
+      renjuEnabled && color === "black" ? exactFiveLine : findWinningLine(board, x, y, color);
+    board[y][x] = null;
+
+    return {
+      exactFiveLine,
+      forbidden,
+      winningLine
+    };
   }
 
   function boardIsFull(board) {
@@ -316,7 +468,7 @@ module.exports = function attachOmokGame(rootIo) {
     const whitePlayer = findPlayerByColor(room, "white");
     setRecentAction(
       room,
-      `${blackPlayer?.name || "-"} 흑, ${whitePlayer?.name || "-"} 백`,
+      `${RULE_TEXT[room.renjuEnabled ? "renju" : "normal"]} · ${blackPlayer?.name || "-"} 흑, ${whitePlayer?.name || "-"} 백`,
       "neutral"
     );
   }
@@ -441,7 +593,9 @@ module.exports = function attachOmokGame(rootIo) {
   function chooseBotMove(room, bot) {
     if (occupiedCount(room.board) === 0) {
       const center = Math.floor(BOARD_SIZE / 2);
-      return { x: center, y: center };
+      if (!simulateMoveResult(room.board, center, center, bot.color, room.renjuEnabled).forbidden) {
+        return { x: center, y: center };
+      }
     }
 
     const empties = [];
@@ -457,22 +611,30 @@ module.exports = function attachOmokGame(rootIo) {
       }
     }
 
-    const candidates = empties.length
+    const candidates = (
+      empties.length
       ? empties
       : Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_unused, index) => ({
           x: index % BOARD_SIZE,
           y: Math.floor(index / BOARD_SIZE)
-        })).filter(({ x, y }) => room.board[y][x] === null);
+        })).filter(({ x, y }) => room.board[y][x] === null)
+    ).filter(({ x, y }) => !simulateMoveResult(room.board, x, y, bot.color, room.renjuEnabled).forbidden);
+
+    if (!candidates.length) {
+      return null;
+    }
 
     for (const candidate of candidates) {
-      if (simulatedWinningLine(room.board, candidate.x, candidate.y, bot.color)) {
+      if (simulateMoveResult(room.board, candidate.x, candidate.y, bot.color, room.renjuEnabled).winningLine) {
         return candidate;
       }
     }
 
     const opponentColor = otherColor(bot.color);
     for (const candidate of candidates) {
-      if (simulatedWinningLine(room.board, candidate.x, candidate.y, opponentColor)) {
+      if (
+        simulateMoveResult(room.board, candidate.x, candidate.y, opponentColor, room.renjuEnabled).winningLine
+      ) {
         return candidate;
       }
     }
@@ -524,6 +686,31 @@ module.exports = function attachOmokGame(rootIo) {
     };
 
     const moveText = `${player.name} ${COLOR_TEXT[player.color]} ${formatMove(x, y)}`;
+    const exactFiveLine = findExactFiveLine(room.board, x, y, player.color);
+    const forbidden = forbiddenType(room.board, x, y, player.color, room.renjuEnabled);
+
+    if (room.renjuEnabled && player.color === "black") {
+      if (exactFiveLine) {
+        finishGame(room, player.id, `${player.name} 승리`, exactFiveLine);
+        return {
+          win: true,
+          draw: false,
+          moveText
+        };
+      }
+
+      if (forbidden) {
+        const whitePlayer = findPlayerByColor(room, "white");
+        finishGame(room, whitePlayer?.id || null, `${player.name} ${forbidden} 금수 · ${whitePlayer?.name || "백"} 승리`);
+        return {
+          win: false,
+          draw: false,
+          forbidden,
+          moveText
+        };
+      }
+    }
+
     const winningLine = findWinningLine(room.board, x, y, player.color);
 
     if (winningLine) {
@@ -619,7 +806,7 @@ module.exports = function attachOmokGame(rootIo) {
   io.on("connection", (socket) => {
     socket.join(socket.id);
 
-    socket.on("room:create", ({ name }, callback = () => {}) => {
+    socket.on("room:create", ({ name, settings }, callback = () => {}) => {
       const safeName = sanitizeName(name);
       if (!safeName) {
         callback({ ok: false, message: "닉네임을 입력하세요" });
@@ -629,7 +816,7 @@ module.exports = function attachOmokGame(rootIo) {
       removePlayer(socket.id);
       leaveJoinedRooms(socket);
 
-      const room = createRoom(generateRoomCode(), socket.id, safeName);
+      const room = createRoom(generateRoomCode(), socket.id, safeName, settings);
       socket.join(room.code);
       broadcastRoom(room, { skipBotSchedule: true });
       callback({ ok: true, code: room.code });

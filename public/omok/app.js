@@ -16,11 +16,13 @@ const elements = {
   entryScreen: document.getElementById("entryScreen"),
   gameScreen: document.getElementById("gameScreen"),
   nameInput: document.getElementById("nameInput"),
+  renjuRuleInput: document.getElementById("renjuRuleInput"),
   ruleGuide: document.getElementById("ruleGuide"),
   roomInput: document.getElementById("roomInput"),
   entryStatus: document.getElementById("entryStatus"),
   roomBadge: document.getElementById("roomBadge"),
   playerBadge: document.getElementById("playerBadge"),
+  ruleBadge: document.getElementById("ruleBadge"),
   phaseBadge: document.getElementById("phaseBadge"),
   statusBadge: document.getElementById("statusBadge"),
   botTools: document.getElementById("botTools"),
@@ -53,6 +55,11 @@ const PHASE_TEXT = {
   result: "결과"
 };
 
+const RULE_GUIDE = {
+  off: "일반 오목. 흑과 백이 번갈아 두고 먼저 5개 이상 연결하면 승리합니다.",
+  on: "렌주룰. 흑은 33, 44, 장목 금수이며 정확히 5목만 승리합니다. 백은 금수 없이 5개 이상 연결하면 승리합니다."
+};
+
 function emitWithAck(event, payload) {
   return new Promise((resolve) => {
     socket.emit(event, payload, resolve);
@@ -83,6 +90,15 @@ function colorText(color) {
     return "백";
   }
   return "대기";
+}
+
+function ruleText(renjuEnabled) {
+  return renjuEnabled ? "렌주룰" : "일반 오목";
+}
+
+function renderRuleGuide() {
+  const mode = elements.renjuRuleInput?.value === "on" ? "on" : "off";
+  elements.ruleGuide.textContent = RULE_GUIDE[mode];
 }
 
 function setEntryStatus(text) {
@@ -143,7 +159,7 @@ function displayCenterStatus() {
   }
 
   if (state.room.phase === "lobby") {
-    return "호스트가 시작하면 흑과 백이 배정됩니다";
+    return `${ruleText(state.room.renjuEnabled)} · 호스트가 시작하면 흑과 백이 배정됩니다`;
   }
 
   if (state.room.phase === "playing") {
@@ -166,6 +182,7 @@ function renderHeader() {
   const room = state.room;
   elements.roomBadge.textContent = `방 ${room.code}`;
   elements.playerBadge.textContent = `${room.players.length}/${room.targetPlayerCount}명`;
+  elements.ruleBadge.textContent = ruleText(room.renjuEnabled);
   elements.phaseBadge.textContent = PHASE_TEXT[room.phase] || room.phase;
   elements.statusBadge.textContent = displayStatus();
 }
@@ -615,7 +632,10 @@ socket.on("room:update", (room) => {
 
 async function createRoom() {
   const response = await emitWithAck("room:create", {
-    name: elements.nameInput.value.trim()
+    name: elements.nameInput.value.trim(),
+    settings: {
+      renjuEnabled: elements.renjuRuleInput.value === "on"
+    }
   });
 
   if (!response?.ok) {
@@ -731,6 +751,7 @@ elements.joinRoomButton.addEventListener("click", joinRoom);
 elements.addBotButton.addEventListener("click", addBots);
 elements.startButton.addEventListener("click", startGame);
 elements.resetButton.addEventListener("click", resetGame);
+elements.renjuRuleInput.addEventListener("change", renderRuleGuide);
 elements.chatForm.addEventListener("submit", sendChat);
 
 elements.chatInput.addEventListener("compositionstart", () => {
@@ -781,4 +802,5 @@ window.addEventListener("resize", () => {
   syncBoardLayout();
 });
 
+renderRuleGuide();
 renderRoom();
