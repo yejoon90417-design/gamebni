@@ -7,6 +7,7 @@ const attachBangGame = require("./bang-game");
 const attachDavinciGame = require("./davinci-game");
 const attachHalliGame = require("./halli-game");
 const attachOmokGame = require("./omok-game");
+const attachYutGame = require("./yut-game");
 const { closeRedisClient } = require("./redis-client");
 const { createRoomStore, normalizeRoomCode, snapshotRoom } = require("./room-store");
 const {
@@ -72,7 +73,14 @@ const io = new Server(server);
 registerSessionNamespace(io);
 
 app.use((request, response, next) => {
-  if (request.path === "/halli" || request.path === "/halli/" || request.path.startsWith("/halli/")) {
+  if (
+    request.path === "/halli" ||
+    request.path === "/halli/" ||
+    request.path.startsWith("/halli/") ||
+    request.path === "/yut" ||
+    request.path === "/yut/" ||
+    request.path.startsWith("/yut/")
+  ) {
     response.set("Cache-Control", "no-store, no-cache, must-revalidate");
     response.set("Pragma", "no-cache");
     response.set("Expires", "0");
@@ -103,6 +111,10 @@ app.get(["/omok", "/omok/"], (_request, response) => {
 
 app.get(["/halli", "/halli/"], (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "halli", "index.html"));
+});
+
+app.get(["/yut", "/yut/"], (_request, response) => {
+  response.sendFile(path.join(__dirname, "public", "yut", "index.html"));
 });
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -1421,6 +1433,7 @@ async function bootstrap() {
     attachDavinciGame(io),
     attachHalliGame(io),
     attachOmokGame(io),
+    attachYutGame(io),
     restorePersistedRooms()
   ]);
 

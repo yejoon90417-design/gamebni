@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Omok</title>
-    <link rel="stylesheet" href="/omok/styles.css" />
+    <title>윷놀이</title>
+    <link rel="stylesheet" href="/yut/styles.css?v=30" />
   </head>
   <body>
     <div class="app">
       <section class="screen screen-entry" id="entryScreen">
         <div class="entry-shell">
           <div class="brand">
-            <span class="brand-mark">O</span>
-            <span>OMOK</span>
+            <span class="brand-mark">Y</span>
+            <span>윷놀이</span>
           </div>
 
           <section class="entry-form">
@@ -20,9 +20,9 @@
               <a class="button-link button-secondary" href="/">LIAR</a>
               <a class="button-link button-secondary" href="/bang/">BANG</a>
               <a class="button-link button-secondary" href="/davinci/">DAVINCI</a>
-              <button type="button" disabled>OMOK</button>
+              <a class="button-link button-secondary" href="/omok/">OMOK</a>
               <a class="button-link button-secondary" href="/halli/">HALLI</a>
-              <a class="button-link button-secondary" href="/yut/">YUT</a>
+              <button type="button" disabled>윷놀이</button>
             </div>
 
             <div class="field-group">
@@ -31,17 +31,18 @@
             </div>
 
             <div class="field-group">
-              <label for="renjuRuleInput">규칙</label>
-              <select id="renjuRuleInput">
-                <option value="off" selected>일반 오목</option>
-                <option value="on">렌주룰</option>
+              <label for="targetPlayerCountSelect">목표 인원</label>
+              <select id="targetPlayerCountSelect">
+                <option value="2" selected>2명</option>
+                <option value="3">3명</option>
+                <option value="4">4명</option>
               </select>
             </div>
 
             <div class="field-group">
               <label>기본 규칙</label>
               <div class="guide-box" id="ruleGuide">
-                2인 전용. 흑과 백이 번갈아 두고 먼저 5목을 만들면 승리합니다.
+                빽도를 사용합니다. 상대 말을 잡으면 한 번 더 던지고, 같은 칸의 내 말은 업어서 함께 움직입니다.
               </div>
             </div>
 
@@ -64,23 +65,20 @@
         <header class="game-topbar">
           <div class="topbar-left">
             <div class="brand">
-              <span class="brand-mark">O</span>
-              <span>OMOK</span>
+              <span class="brand-mark">Y</span>
+              <span>윷놀이</span>
             </div>
             <div class="chip" id="roomBadge">-</div>
             <div class="chip" id="playerBadge">-</div>
-            <div class="chip" id="ruleBadge">-</div>
             <div class="chip" id="phaseBadge">-</div>
             <div class="chip chip-status" id="statusBadge">-</div>
           </div>
 
           <div class="topbar-actions">
             <div class="bot-tools" id="botTools" hidden>
-              <input id="botCountInput" type="number" min="1" max="1" value="1" />
+              <input id="botCountInput" type="number" min="1" max="2" value="1" />
               <button id="addBotButton" class="button-secondary" type="button">봇 추가</button>
             </div>
-            <button id="startButton" type="button" hidden>시작</button>
-            <button id="resetButton" type="button" hidden>다음 판</button>
             <button id="leaveButton" class="button-secondary" type="button">방 나가기</button>
           </div>
         </header>
@@ -92,27 +90,7 @@
                 <strong>채팅 로그</strong>
               </div>
               <div class="chat-log-list" id="chatLogList"></div>
-            </div>
-          </aside>
-
-          <section class="table-panel">
-            <div class="table-stage" id="tableStage">
-              <section class="seat-band seat-band-top" id="topSeat"></section>
-
-              <section class="board-area" id="boardArea">
-                <div class="center-card" id="centerCard">
-                  <p class="center-status" id="centerStatus">-</p>
-                  <p class="center-action" id="centerAction" hidden></p>
-                </div>
-
-                <div class="board-shell" id="boardShell">
-                  <div class="board-grid" id="boardGrid"></div>
-                </div>
-              </section>
-
-              <section class="seat-band seat-band-bottom" id="bottomSeat"></section>
-
-              <section class="seat-chat-composer" id="seatChatComposer" hidden>
+              <section class="seat-chat-composer chat-log-composer" id="seatChatComposer" hidden>
                 <form class="seat-chat-form" id="chatForm">
                   <input
                     id="chatInput"
@@ -131,13 +109,55 @@
                 <p class="chat-status" id="chatStatus"></p>
               </section>
             </div>
+          </aside>
+
+          <section class="board-panel">
+            <div class="board-stage">
+              <div class="board-surface">
+                <div class="board-shell">
+                  <svg class="board-svg" id="boardSvg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+                  <div class="board-nodes" id="boardNodes"></div>
+                  <div class="board-animation-layer" id="boardAnimationLayer"></div>
+                  <div class="spot-picker" id="spotPicker"></div>
+                </div>
+                <div class="seat-layer" id="seatLayer"></div>
+              </div>
+            </div>
           </section>
+
+          <aside class="control-panel">
+            <section class="control-card board-info-card">
+              <p class="board-meta-eyebrow">차례</p>
+              <div class="board-meta">
+                <p class="board-meta-title" id="boardMetaTitle">대기실</p>
+                <p class="board-meta-text" id="boardMetaText">인원이 모이면 시작 버튼으로 판을 엽니다.</p>
+              </div>
+              <p class="recent-action" id="recentActionText">-</p>
+            </section>
+            <section class="control-card throw-card">
+              <p class="control-eyebrow">윷 던지기</p>
+              <div class="throw-stage" id="throwStage">
+                <div class="throw-arena" id="throwArena"></div>
+                <p class="throw-result" id="throwResult">대기</p>
+                <p class="throw-prompt" id="throwPrompt">차례가 오면 윷을 던지세요.</p>
+                <div class="roll-queue throw-roll-queue" id="rollQueue"></div>
+              </div>
+              <div class="throw-actions">
+                <button id="startButton" type="button" hidden>시작</button>
+                <button id="throwButton" type="button" hidden>던지기</button>
+                <button id="discardRollButton" class="button-secondary" type="button" hidden>버리기</button>
+                <button id="resetButton" type="button" hidden>다시하기</button>
+              </div>
+            </section>
+            <div class="move-options" id="moveOptions"></div>
+            <div class="player-list" id="playerList"></div>
+          </aside>
         </main>
       </section>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="/shared/session.js"></script>
-    <script src="/omok/app.js"></script>
+    <script src="/yut/app.js?v=30"></script>
   </body>
 </html>
