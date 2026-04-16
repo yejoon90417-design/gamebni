@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Davinci Code</title>
+    <link rel="stylesheet" href="/davinci/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <section class="screen screen-entry" id="entryScreen">
+        <div class="entry-shell">
+          <div class="brand">
+            <span class="brand-mark">D</span>
+            <span>DAVINCI</span>
+          </div>
+
+          <section class="entry-form">
+            <div class="game-picker">
+              <a class="button-link button-secondary" href="/">LIAR</a>
+              <a class="button-link button-secondary" href="/bang/">BANG</a>
+              <button type="button" disabled>DAVINCI</button>
+              <a class="button-link button-secondary" href="/omok/">OMOK</a>
+            </div>
+
+            <div class="field-group">
+              <label for="nameInput">닉네임</label>
+              <input id="nameInput" maxlength="16" autocomplete="nickname" />
+            </div>
+
+            <div class="field-group">
+              <label for="targetPlayerCountSelect">목표 인원</label>
+              <select id="targetPlayerCountSelect">
+                <option value="2">2명</option>
+                <option value="3" selected>3명</option>
+                <option value="4">4명</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label>기본 규칙</label>
+              <div class="guide-box" id="ruleGuide">-</div>
+            </div>
+
+            <div class="field-group">
+              <label for="roomInput">방 코드</label>
+              <input id="roomInput" maxlength="5" spellcheck="false" autocapitalize="characters" />
+            </div>
+
+            <div class="actions">
+              <button id="createRoomButton" type="button">방 만들기</button>
+              <button id="joinRoomButton" type="button">입장</button>
+            </div>
+
+            <p class="entry-status" id="entryStatus"></p>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen screen-game" id="gameScreen" hidden>
+        <header class="game-topbar">
+          <div class="topbar-left">
+            <div class="brand">
+              <span class="brand-mark">D</span>
+              <span>DAVINCI</span>
+            </div>
+            <div class="chip" id="roomBadge">-</div>
+            <div class="chip" id="targetBadge">-</div>
+            <div class="chip" id="phaseBadge">-</div>
+            <div class="chip" id="turnBadge">-</div>
+            <div class="chip" id="deckBadge">-</div>
+            <div class="chip chip-status" id="statusBadge">-</div>
+          </div>
+
+          <div class="topbar-actions">
+            <div class="bot-tools" id="botTools" hidden>
+              <input id="botCountInput" type="number" min="1" max="1" value="1" />
+              <button id="addBotButton" class="button-secondary" type="button">봇 추가</button>
+            </div>
+            <button id="startButton" type="button" hidden>시작</button>
+            <button id="resetButton" type="button" hidden>다음 판</button>
+          </div>
+        </header>
+
+        <main class="game-layout">
+          <aside class="chat-log-panel">
+            <div class="chat-log-shell">
+              <div class="chat-log-head">
+                <strong>채팅 로그</strong>
+              </div>
+              <div class="chat-log-list" id="chatLogList"></div>
+            </div>
+          </aside>
+
+          <section class="table-panel">
+            <div class="table-stage" id="tableStage">
+              <div class="player-orbit" id="playerBoard"></div>
+
+              <section class="table-center">
+                <div class="center-card">
+                  <p class="center-action" id="centerAction" hidden></p>
+                  <p class="center-status" id="centerStatus">-</p>
+
+                  <section class="control-group control-inline" id="drawControls" hidden>
+                    <button id="drawBlackButton" type="button">검정 선택</button>
+                    <button id="drawWhiteButton" class="button-secondary" type="button">흰색 선택</button>
+                    <button id="drawSkipButton" class="button-secondary" type="button" hidden>추리 시작</button>
+                  </section>
+
+                  <section class="control-group control-inline" id="guessControls" hidden>
+                    <button id="endTurnButton" class="button-secondary" type="button">턴 종료</button>
+                  </section>
+
+                  <section class="control-group control-inline" id="penaltyControls" hidden>
+                    <button id="revealPenaltyButton" type="button">타일 공개</button>
+                  </section>
+                </div>
+              </section>
+
+              <section class="start-roulette" id="startRoulette" hidden>
+                <div class="roulette-panel">
+                  <div class="roulette-wheel-wrap">
+                    <div class="roulette-pointer"></div>
+                    <div class="roulette-wheel" id="rouletteWheel"></div>
+                    <div class="roulette-labels" id="rouletteLabels"></div>
+                  </div>
+                  <p class="roulette-status" id="rouletteStatus">선 정하는 중</p>
+                </div>
+              </section>
+
+              <section class="seat-chat-composer" id="seatChatComposer" hidden>
+                <form class="seat-chat-form" id="chatForm">
+                  <input
+                    id="chatInput"
+                    type="text"
+                    maxlength="140"
+                    placeholder="채팅 입력"
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    lang="ko"
+                    inputmode="text"
+                    enterkeyhint="send"
+                  />
+                  <button id="sendChatButton" type="submit">전송</button>
+                </form>
+                <p class="chat-status" id="chatStatus"></p>
+              </section>
+            </div>
+          </section>
+        </main>
+
+        <section class="guess-modal" id="guessModal" hidden>
+          <div class="guess-backdrop" id="guessBackdrop"></div>
+          <div class="guess-dialog">
+            <div class="guess-head">
+              <div class="guess-title-group">
+                <span class="eyebrow">타일 추리</span>
+                <strong id="guessTargetLabel">-</strong>
+              </div>
+              <button id="guessCancelButton" class="button-secondary" type="button">닫기</button>
+            </div>
+            <div class="guess-type-toggle" id="guessTypeToggle">
+              <button id="guessTypeNumberButton" class="guess-type-button is-active" type="button">숫자</button>
+              <button id="guessTypeJokerButton" class="guess-type-button button-secondary" type="button">조커</button>
+            </div>
+            <div class="guess-body">
+              <input id="guessModalInput" type="number" min="0" max="11" placeholder="0 ~ 11" />
+              <button id="guessSubmitButton" type="button">제출</button>
+            </div>
+            <p class="guess-status" id="guessStatus"></p>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/davinci/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Omok</title>
+    <link rel="stylesheet" href="/omok/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <section class="screen screen-entry" id="entryScreen">
+        <div class="entry-shell">
+          <div class="brand">
+            <span class="brand-mark">O</span>
+            <span>OMOK</span>
+          </div>
+
+          <section class="entry-form">
+            <div class="game-picker">
+              <a class="button-link button-secondary" href="/">LIAR</a>
+              <a class="button-link button-secondary" href="/bang/">BANG</a>
+              <a class="button-link button-secondary" href="/davinci/">DAVINCI</a>
+              <button type="button" disabled>OMOK</button>
+            </div>
+
+            <div class="field-group">
+              <label for="nameInput">닉네임</label>
+              <input id="nameInput" maxlength="16" autocomplete="nickname" />
+            </div>
+
+            <div class="field-group">
+              <label>기본 규칙</label>
+              <div class="guide-box" id="ruleGuide">
+                2인 전용. 흑과 백이 번갈아 두고 먼저 5목을 만들면 승리합니다.
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="roomInput">방 코드</label>
+              <input id="roomInput" maxlength="5" spellcheck="false" autocapitalize="characters" />
+            </div>
+
+            <div class="actions">
+              <button id="createRoomButton" type="button">방 만들기</button>
+              <button id="joinRoomButton" type="button">입장</button>
+            </div>
+
+            <p class="entry-status" id="entryStatus"></p>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen screen-game" id="gameScreen" hidden>
+        <header class="game-topbar">
+          <div class="topbar-left">
+            <div class="brand">
+              <span class="brand-mark">O</span>
+              <span>OMOK</span>
+            </div>
+            <div class="chip" id="roomBadge">-</div>
+            <div class="chip" id="playerBadge">-</div>
+            <div class="chip" id="phaseBadge">-</div>
+            <div class="chip chip-status" id="statusBadge">-</div>
+          </div>
+
+          <div class="topbar-actions">
+            <div class="bot-tools" id="botTools" hidden>
+              <input id="botCountInput" type="number" min="1" max="1" value="1" />
+              <button id="addBotButton" class="button-secondary" type="button">봇 추가</button>
+            </div>
+            <button id="startButton" type="button" hidden>시작</button>
+            <button id="resetButton" type="button" hidden>다음 판</button>
+          </div>
+        </header>
+
+        <main class="game-layout">
+          <aside class="chat-log-panel">
+            <div class="chat-log-shell">
+              <div class="chat-log-head">
+                <strong>채팅 로그</strong>
+              </div>
+              <div class="chat-log-list" id="chatLogList"></div>
+            </div>
+          </aside>
+
+          <section class="table-panel">
+            <div class="table-stage" id="tableStage">
+              <section class="seat-band seat-band-top" id="topSeat"></section>
+
+              <section class="board-area">
+                <div class="center-card">
+                  <p class="center-status" id="centerStatus">-</p>
+                  <p class="center-action" id="centerAction" hidden></p>
+                </div>
+
+                <div class="board-shell">
+                  <div class="board-grid" id="boardGrid"></div>
+                </div>
+              </section>
+
+              <section class="seat-band seat-band-bottom" id="bottomSeat"></section>
+
+              <section class="seat-chat-composer" id="seatChatComposer" hidden>
+                <form class="seat-chat-form" id="chatForm">
+                  <input
+                    id="chatInput"
+                    type="text"
+                    maxlength="140"
+                    placeholder="채팅 입력"
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    lang="ko"
+                    inputmode="text"
+                    enterkeyhint="send"
+                  />
+                  <button id="sendChatButton" type="submit">전송</button>
+                </form>
+                <p class="chat-status" id="chatStatus"></p>
+              </section>
+            </div>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/omok/app.js"></script>
+  </body>
+</html>

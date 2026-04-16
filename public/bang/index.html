@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BANG</title>
+    <link rel="stylesheet" href="/bang/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <section class="screen screen-entry" id="entryScreen">
+        <div class="entry-shell">
+          <div class="brand">
+            <span class="brand-mark">B</span>
+            <span>BANG</span>
+          </div>
+
+          <section class="entry-form">
+            <div class="game-picker">
+              <a class="button-link button-secondary" href="/">LIAR</a>
+              <button type="button" disabled>BANG</button>
+              <a class="button-link button-secondary" href="/davinci/">DAVINCI</a>
+              <a class="button-link button-secondary" href="/omok/">OMOK</a>
+            </div>
+
+            <div class="field-group">
+              <label for="nameInput">닉네임</label>
+              <input id="nameInput" maxlength="16" autocomplete="nickname" />
+            </div>
+
+            <div class="field-group">
+              <label for="targetPlayerCountSelect">목표 인원</label>
+              <select id="targetPlayerCountSelect">
+                <option value="3">3명</option>
+                <option value="4" selected>4명</option>
+                <option value="5">5명</option>
+                <option value="6">6명</option>
+                <option value="7">7명</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label>역할 구성</label>
+              <div class="role-guide" id="roleGuide">-</div>
+            </div>
+
+            <div class="field-group">
+              <label for="roomInput">방 코드</label>
+              <input id="roomInput" maxlength="5" spellcheck="false" autocapitalize="characters" />
+            </div>
+
+            <div class="actions">
+              <button id="createRoomButton" type="button">방 만들기</button>
+              <button id="joinRoomButton" type="button">입장</button>
+            </div>
+
+            <p class="entry-status" id="entryStatus"></p>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen screen-game" id="gameScreen" hidden>
+        <header class="game-topbar">
+          <div class="topbar-left">
+            <div class="brand">
+              <span class="brand-mark">B</span>
+              <span>BANG</span>
+            </div>
+            <div class="chip" id="roomBadge">-</div>
+            <div class="chip" id="targetBadge">-</div>
+            <div class="chip" id="phaseBadge">-</div>
+            <div class="chip" id="turnBadge">-</div>
+          </div>
+
+          <div class="topbar-actions">
+            <div class="bot-tools" id="botTools" hidden>
+              <input id="botCountInput" type="number" min="1" max="1" value="1" />
+              <button id="addBotButton" class="button-secondary" type="button">봇 추가</button>
+            </div>
+            <button id="startButton" type="button" hidden>시작</button>
+            <button id="resetButton" type="button" hidden>다음</button>
+          </div>
+        </header>
+
+        <main class="game-layout" id="gameLayout">
+          <section class="table-panel">
+            <div class="table-stage" id="tableStage">
+              <div class="player-orbit" id="playerBoard"></div>
+
+              <section class="table-center">
+                <div class="center-grid">
+                  <div class="stack deck-stack" id="deckStack">
+                    <div class="stack-face"></div>
+                    <div class="stack-copy">
+                      <span class="stack-label">DECK</span>
+                      <strong id="deckCount">0</strong>
+                    </div>
+                  </div>
+
+                  <div class="center-display">
+                    <p class="center-status" id="centerStatus">-</p>
+                    <p class="selected-line" id="selectedLine">카드를 선택하세요</p>
+                    <div class="center-actions">
+                      <section class="control-block control-inline" id="drawControls" hidden>
+                        <button id="drawButton" type="button">카드 뽑기</button>
+                      </section>
+
+                      <section class="control-block control-inline" id="playControls" hidden>
+                        <button id="playButton" type="button">사용</button>
+                        <button id="endTurnButton" class="button-secondary" type="button">턴 종료</button>
+                      </section>
+
+                      <section class="control-block control-inline" id="abilityControls" hidden>
+                        <button id="abilityButton" class="button-secondary" type="button">능력 사용</button>
+                      </section>
+                    </div>
+                  </div>
+
+                  <div class="stack discard-stack" id="discardStack">
+                    <div class="stack-face"></div>
+                    <div class="stack-copy">
+                      <span class="stack-label">DISCARD</span>
+                      <strong id="discardCount">0</strong>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="hand-panel hand-dock hand-overlay">
+                <strong id="handCount" hidden>0</strong>
+                <div class="hand-row" id="handList"></div>
+              </section>
+
+              <div class="animation-layer" id="animationLayer" aria-hidden="true"></div>
+              <div class="cinematic-banner" id="cinematicBanner" aria-live="polite"></div>
+            </div>
+          </section>
+        </main>
+
+        <section class="intro-modal" id="introModal" hidden>
+          <div class="intro-backdrop"></div>
+          <div class="intro-dialog">
+            <div class="intro-copy">
+              <p class="intro-kicker">시작 정보</p>
+              <h2 id="introTitle">-</h2>
+              <p id="introBody">-</p>
+            </div>
+            <div class="intro-choice-list" id="introChoices"></div>
+            <div class="intro-actions">
+              <button id="introCloseButton" class="button-secondary" type="button">닫기</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-modal" id="detailPanel" hidden>
+          <div class="detail-backdrop" id="detailBackdrop"></div>
+          <div class="detail-panel detail-dialog">
+            <div class="panel-head">
+              <span class="eyebrow">상세</span>
+              <button id="detailCloseButton" class="button-secondary" type="button">닫기</button>
+            </div>
+            <div class="detail-card">
+              <div class="detail-head">
+                <strong id="detailName">-</strong>
+                <span id="detailRole">-</span>
+              </div>
+              <div class="detail-stats" id="detailStats"></div>
+              <p class="detail-character" id="detailCharacter">-</p>
+              <p class="detail-ability" id="detailAbility">-</p>
+              <div class="detail-equipment" id="detailEquipment"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ability-modal" id="abilityModal" hidden>
+          <div class="ability-backdrop" id="abilityBackdrop"></div>
+          <div class="ability-dialog">
+            <div class="ability-head">
+              <div class="ability-title-group">
+                <span class="eyebrow">능력</span>
+                <strong id="abilityTitle">-</strong>
+              </div>
+              <button id="abilityCloseButton" class="button-secondary" type="button">닫기</button>
+            </div>
+            <div class="ability-body">
+              <p class="ability-copy" id="abilityBody">-</p>
+              <div class="ability-options" id="abilityOptions"></div>
+            </div>
+            <div class="ability-actions" id="abilityActions">
+              <button id="abilityConfirmButton" type="button">확인</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card-zoom-modal" id="cardZoomModal" hidden>
+          <div class="card-zoom-backdrop" id="cardZoomBackdrop"></div>
+          <div class="card-zoom-dialog">
+            <div class="card-zoom-head">
+              <div class="card-zoom-title-group">
+                <span class="eyebrow">카드 보기</span>
+                <strong id="cardZoomTitle">-</strong>
+              </div>
+              <button id="cardZoomCloseButton" class="button-secondary" type="button">닫기</button>
+            </div>
+            <div class="card-zoom-body">
+              <div class="card-zoom-view" id="cardZoomView"></div>
+              <div class="card-zoom-copy">
+                <div class="card-zoom-meta" id="cardZoomMeta"></div>
+                <p class="card-zoom-description" id="cardZoomDescription">-</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/bang/app.js"></script>
+  </body>
+</html>

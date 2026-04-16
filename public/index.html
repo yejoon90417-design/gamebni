@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Liar</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <section class="screen screen-entry" id="entryScreen">
+        <div class="entry-shell">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 40 40" role="img">
+                <rect x="4" y="4" width="32" height="32" rx="6" fill="none" stroke="currentColor" stroke-width="2" />
+                <path d="M12 27h16M14 14h12M20 14v13" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+              </svg>
+            </span>
+            <span>LIAR</span>
+          </div>
+
+          <section class="entry-form">
+            <div class="game-picker">
+              <button type="button" disabled>LIAR</button>
+              <a class="button-link button-secondary" href="/bang/">BANG</a>
+              <a class="button-link button-secondary" href="/davinci/">DAVINCI</a>
+              <a class="button-link button-secondary" href="/omok/">OMOK</a>
+            </div>
+
+            <div class="field-group">
+              <label for="nameInput">이름</label>
+              <input id="nameInput" maxlength="16" autocomplete="nickname" />
+            </div>
+
+            <div class="field-group">
+              <label for="roomInput">방 코드</label>
+              <input id="roomInput" maxlength="5" spellcheck="false" autocapitalize="characters" />
+            </div>
+
+            <div class="settings-grid">
+              <div class="field-group">
+                <label for="discussionRoundsInput">발언 라운드</label>
+                <select id="discussionRoundsInput">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </div>
+
+              <div class="field-group">
+                <label for="breakSecondsInput">수다 시간</label>
+                <select id="breakSecondsInput">
+                  <option value="0">없음</option>
+                  <option value="30">30초</option>
+                  <option value="60">1분</option>
+                  <option value="90" selected>1분 30초</option>
+                  <option value="120">2분</option>
+                  <option value="180">3분</option>
+                </select>
+              </div>
+
+              <div class="field-group">
+                <label for="voteModeInput">투표 방식</label>
+                <select id="voteModeInput">
+                  <option value="single" selected>최종 지목</option>
+                  <option value="elimination">라운드별 지목</option>
+                </select>
+              </div>
+
+              <div class="field-group">
+                <label for="liarCountInput">라이어 수</label>
+                <select id="liarCountInput">
+                  <option value="1" selected>1명</option>
+                  <option value="2">2명</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="createRoomButton" type="button">방 만들기</button>
+              <button id="joinRoomButton" type="button">입장</button>
+            </div>
+            <p class="entry-status" id="entryStatus"></p>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen screen-game" id="gameScreen" hidden>
+        <div class="role-modal" id="roleModal" hidden>
+          <div class="role-modal-card">
+            <p class="role-modal-title" id="modalRoleTitle">-</p>
+            <div class="role-modal-lines">
+              <div class="role-modal-line">
+                <span class="eyebrow">주제</span>
+                <strong id="modalTopicLabel">-</strong>
+              </div>
+              <div class="role-modal-line">
+                <span class="eyebrow">단어</span>
+                <strong id="modalWordLabel">-</strong>
+              </div>
+            </div>
+            <button id="closeRoleModalButton" type="button">닫기</button>
+          </div>
+        </div>
+
+        <div class="turn-modal" id="turnModal" hidden>
+          <div class="turn-modal-card">
+            <p class="turn-modal-title">발언</p>
+            <div class="turn-modal-line">
+              <span class="eyebrow">현재</span>
+              <strong id="turnModalCurrentLabel">-</strong>
+            </div>
+            <div class="turn-mode-picker" id="turnModePicker" hidden>
+              <button id="selectOpinionModeButton" class="button-secondary" type="button">의견 제출</button>
+              <button id="selectGuessModeButton" class="button-secondary" type="button">답 맞추기</button>
+            </div>
+            <div class="turn-modal-actions">
+              <div class="turn-modal-action" id="turnOpinionSection">
+                <label for="opinionInput">의견 제출</label>
+                <div class="inline-form">
+                  <input id="opinionInput" maxlength="48" placeholder="의견을 입력하세요" />
+                  <button id="sendOpinionButton" type="button">의견 보내기</button>
+                </div>
+              </div>
+
+              <div class="turn-modal-action" id="turnGuessSection" hidden>
+                <label for="turnGuessInput">답 맞추기</label>
+                <div class="inline-form">
+                  <input id="turnGuessInput" maxlength="24" placeholder="정답을 입력하세요" />
+                  <button id="submitTurnGuessButton" type="button">답 맞추기</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="turn-modal" id="finalGuessModal" hidden>
+          <div class="turn-modal-card">
+            <p class="turn-modal-title">최종 추리</p>
+            <div class="turn-modal-line">
+              <span class="eyebrow">상태</span>
+              <strong>라이어로 지목됐습니다</strong>
+            </div>
+            <label for="finalGuessInput">최종 답 맞추기</label>
+            <div class="inline-form">
+              <input id="finalGuessInput" maxlength="24" placeholder="정답을 입력하세요" />
+              <button id="submitFinalGuessButton" type="button">답 맞추기</button>
+            </div>
+          </div>
+        </div>
+
+        <header class="game-topbar">
+          <div class="topbar-left">
+            <div class="brand">
+              <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 40 40" role="img">
+                  <rect x="4" y="4" width="32" height="32" rx="6" fill="none" stroke="currentColor" stroke-width="2" />
+                  <path d="M12 27h16M14 14h12M20 14v13" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+                </svg>
+              </span>
+              <span>LIAR</span>
+            </div>
+
+            <div class="chip" id="roomBadge">-</div>
+            <div class="chip" id="phaseBadge">-</div>
+            <div class="chip" id="roundBadge">ROUND 0</div>
+          </div>
+
+          <div class="topbar-actions">
+            <button id="startRoundButton" type="button" hidden>시작</button>
+            <button id="resetRoundButton" type="button" hidden>다음</button>
+          </div>
+        </header>
+
+        <main class="game-shell">
+          <section class="chat-log-panel">
+            <div class="feed-head">
+              <span class="eyebrow">채팅 로그</span>
+            </div>
+
+            <div class="feed">
+              <ul class="message-list" id="chatLogList"></ul>
+            </div>
+          </section>
+
+          <section class="stage-panel">
+            <div class="stage-surface" id="stageSurface">
+              <div class="briefing-card">
+                <p class="briefing-role" id="roleLabel">게임 시작 전</p>
+
+                <div class="briefing-lines">
+                  <div class="briefing-line">
+                    <span class="eyebrow">주제</span>
+                    <strong id="topicLabel">-</strong>
+                  </div>
+
+                  <div class="briefing-line">
+                    <span class="eyebrow">단어</span>
+                    <strong id="wordLabel">-</strong>
+                  </div>
+
+                  <div class="briefing-line">
+                    <span class="eyebrow">현재</span>
+                    <strong id="turnLabel">-</strong>
+                  </div>
+
+                  <div class="briefing-line">
+                    <span class="eyebrow">설정</span>
+                    <strong id="settingsLabel">-</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="seat-map" id="seatMap"></div>
+
+              <div class="seat-chat-composer" id="seatChatComposer" hidden>
+                <label for="chatInput">채팅</label>
+                <div class="seat-chat-form">
+                  <input id="chatInput" maxlength="140" />
+                  <button id="sendChatButton" type="button">전송</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="console-panel">
+            <header class="console-header">
+              <p class="phase-meta" id="phaseMeta">-</p>
+              <p class="global-status" id="globalStatus"></p>
+            </header>
+
+            <div class="feed-head">
+              <span class="eyebrow">발언 기록</span>
+            </div>
+
+            <div class="feed">
+              <ul class="message-list" id="messageList"></ul>
+            </div>
+
+            <div class="composer vote-area" id="voteArea" hidden>
+              <label for="voteList">투표</label>
+              <p class="vote-title" id="voteTitle">의심되는 플레이어를 선택하세요</p>
+              <div class="vote-list" id="voteList"></div>
+            </div>
+
+            <section class="result-panel" id="resultPanel" hidden>
+              <div class="result-grid">
+                <div class="result-cell">
+                  <span class="eyebrow">승리</span>
+                  <strong id="winnerLabel">-</strong>
+                </div>
+                <div class="result-cell">
+                  <span class="eyebrow">정답</span>
+                  <strong id="answerLabel">-</strong>
+                </div>
+                <div class="result-cell">
+                  <span class="eyebrow">라이어</span>
+                  <strong id="liarLabel">-</strong>
+                </div>
+                <div class="result-cell">
+                  <span class="eyebrow">지목</span>
+                  <strong id="accusedLabel">-</strong>
+                </div>
+                <div class="result-cell">
+                  <span class="eyebrow">추리</span>
+                  <strong id="guessLabel">-</strong>
+                </div>
+                <div class="result-cell">
+                  <span class="eyebrow">사유</span>
+                  <strong id="reasonLabel">-</strong>
+                </div>
+              </div>
+            </section>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
