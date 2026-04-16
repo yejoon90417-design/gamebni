@@ -531,8 +531,6 @@
     clearBotTimers(room);
 
     const fruit = exactFiveFruit(room);
-    const activePlayers = getActivePlayers(room);
-
     if (fruit) {
       const collected = awardFaceUpCards(room, player);
       setTransferEffect(room, "collect", collected.transfers);
@@ -547,23 +545,7 @@
         return { ok: true };
       }
 
-      if (room.startedPlayerCount > 2 && getActivePlayers(room).length <= 2) {
-        endByCardCount(room, `${player.name} 종 성공`);
-        return { ok: true };
-      }
-
       setRecentAction(room, `${player.name} 종 성공 · ${fruitLabel(fruit)} 5`, "success");
-      return { ok: true };
-    }
-
-    if (room.startedPlayerCount > 2 && activePlayers.length <= 2) {
-      const opponent = activePlayers.find((entry) => entry.id !== player.id) || null;
-      if (opponent) {
-        const collected = awardFaceUpCards(room, opponent);
-        setTransferEffect(room, "collect", collected.transfers);
-      }
-      pushSystemMessage(room, `${player.name} 오판`);
-      endByCardCount(room, `${player.name} 오판`);
       return { ok: true };
     }
 
