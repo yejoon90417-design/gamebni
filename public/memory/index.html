@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memory</title>
+    <link rel="stylesheet" href="/memory/styles.css?v=13" />
+  </head>
+  <body>
+    <div class="app">
+      <section class="screen screen-entry" id="entryScreen">
+        <div class="entry-shell">
+          <div class="brand">
+            <span class="brand-mark">M</span>
+            <span>MEMORY</span>
+          </div>
+
+          <section class="entry-form">
+            <div class="game-picker">
+              <a class="button-link button-secondary" href="/">LIAR</a>
+              <a class="button-link button-secondary" href="/bang/">BANG</a>
+              <a class="button-link button-secondary" href="/davinci/">DAVINCI</a>
+              <a class="button-link button-secondary" href="/omok/">OMOK</a>
+              <a class="button-link button-secondary" href="/halli/">HALLI</a>
+              <a class="button-link button-secondary" href="/yut/">YUT</a>
+              <button type="button" disabled>MEMORY</button>
+            </div>
+
+            <div class="field-group">
+              <label for="nameInput">닉네임</label>
+              <input id="nameInput" maxlength="16" autocomplete="nickname" />
+            </div>
+
+            <div class="field-group">
+              <label for="targetPlayerCountInput">인원</label>
+              <select id="targetPlayerCountInput">
+                <option value="2" selected>2명</option>
+                <option value="3">3명</option>
+                <option value="4">4명</option>
+                <option value="5">5명</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label for="cardCountInput">카드 장수</label>
+              <select id="cardCountInput">
+                <option value="16" selected>16장</option>
+                <option value="20">20장</option>
+                <option value="24">24장</option>
+                <option value="30">30장</option>
+                <option value="36">36장</option>
+                <option value="40">40장</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label>기본 규칙</label>
+              <div class="guide-box">
+                순서대로 카드 두 장을 뒤집고, 같은 짝이면 가져갑니다. 모든 짝이 정리되면 가장 많은 카드를 가진 플레이어가 승리합니다.
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="roomInput">방 코드</label>
+              <input id="roomInput" maxlength="5" spellcheck="false" autocapitalize="characters" />
+            </div>
+
+            <div class="actions">
+              <button id="createRoomButton" type="button">방 만들기</button>
+              <button id="joinRoomButton" type="button">입장</button>
+            </div>
+
+            <p class="entry-status" id="entryStatus"></p>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen screen-game" id="gameScreen" hidden>
+        <header class="game-topbar">
+          <div class="topbar-left">
+            <div class="brand">
+              <span class="brand-mark">M</span>
+              <span>MEMORY</span>
+            </div>
+            <div class="chip" id="roomBadge">-</div>
+            <div class="chip" id="playerBadge">-</div>
+            <div class="chip" id="phaseBadge">-</div>
+            <div class="chip chip-status" id="statusBadge">-</div>
+          </div>
+
+          <div class="topbar-actions">
+            <div class="bot-tools" id="botTools" hidden>
+              <input id="botCountInput" type="number" min="1" max="4" value="1" />
+              <button id="addBotButton" class="button-secondary" type="button">봇 추가</button>
+            </div>
+            <button id="startButton" type="button" hidden>시작</button>
+            <button id="resetButton" type="button" hidden>다음 판</button>
+            <button id="leaveButton" class="button-secondary" type="button">방 나가기</button>
+          </div>
+        </header>
+
+        <main class="game-layout">
+          <aside class="chat-log-panel">
+            <div class="chat-log-shell">
+              <div class="chat-log-head">
+                <strong>채팅 로그</strong>
+              </div>
+              <div class="chat-log-list" id="chatLogList"></div>
+            </div>
+          </aside>
+
+          <section class="board-panel">
+            <div class="table-stage" id="tableStage">
+              <div class="center-card">
+                <p class="center-status" id="centerStatus">-</p>
+                <p class="center-substatus" id="centerSubstatus">-</p>
+              </div>
+
+              <div class="board-shell">
+                <div class="memory-grid" id="boardGrid"></div>
+              </div>
+            </div>
+          </section>
+
+          <aside class="side-panel">
+            <section class="player-panel">
+              <div class="panel-head">
+                <strong>플레이어</strong>
+              </div>
+              <div class="player-list" id="playerList"></div>
+            </section>
+
+            <section class="composer-panel">
+              <form class="chat-form" id="chatForm">
+                <input
+                  id="chatInput"
+                  type="text"
+                  maxlength="140"
+                  placeholder="채팅 입력"
+                  autocomplete="off"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  lang="ko"
+                  inputmode="text"
+                  enterkeyhint="send"
+                />
+                <button id="sendChatButton" type="submit">전송</button>
+              </form>
+              <p class="chat-status" id="chatStatus"></p>
+            </section>
+          </aside>
+        </main>
+      </section>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/shared/session.js"></script>
+    <script src="/memory/app.js?v=7"></script>
+  </body>
+</html>

@@ -6,6 +6,7 @@ const TOPIC_WORDS = require("./data/topics");
 const attachBangGame = require("./bang-game");
 const attachDavinciGame = require("./davinci-game");
 const attachHalliGame = require("./halli-game");
+const attachMemoryGame = require("./memory-game");
 const attachOmokGame = require("./omok-game");
 const attachYutGame = require("./yut-game");
 const { closeRedisClient } = require("./redis-client");
@@ -77,6 +78,9 @@ app.use((request, response, next) => {
     request.path === "/halli" ||
     request.path === "/halli/" ||
     request.path.startsWith("/halli/") ||
+    request.path === "/memory" ||
+    request.path === "/memory/" ||
+    request.path.startsWith("/memory/") ||
     request.path === "/yut" ||
     request.path === "/yut/" ||
     request.path.startsWith("/yut/")
@@ -111,6 +115,10 @@ app.get(["/omok", "/omok/"], (_request, response) => {
 
 app.get(["/halli", "/halli/"], (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "halli", "index.html"));
+});
+
+app.get(["/memory", "/memory/"], (_request, response) => {
+  response.sendFile(path.join(__dirname, "public", "memory", "index.html"));
 });
 
 app.get(["/yut", "/yut/"], (_request, response) => {
@@ -1432,6 +1440,7 @@ async function bootstrap() {
     attachBangGame(io),
     attachDavinciGame(io),
     attachHalliGame(io),
+    attachMemoryGame(io),
     attachOmokGame(io),
     attachYutGame(io),
     restorePersistedRooms()
