@@ -24,6 +24,10 @@ const {
 } = require("./stability");
 
 const PORT = process.env.PORT || 3000;
+const SERVICE_NAME = process.env.RENDER_SERVICE_NAME || "liar-chat-game";
+const BUILD_COMMIT_SHA =
+  process.env.RENDER_GIT_COMMIT || process.env.COMMIT_SHA || process.env.GIT_COMMIT || "unknown";
+const BOOT_AT = new Date().toISOString();
 const ROOM_CODE_LENGTH = 5;
 const MIN_PLAYERS = 2;
 const DEFAULT_DISCUSSION_ROUNDS = 3;
@@ -63,6 +67,7 @@ const BOT_CHAT_LINES = [
 const rooms = new Map();
 const disconnectTimers = new Map();
 const DISCONNECT_GRACE_MS = getDisconnectGraceMs();
+let isShuttingDown = false;
 const roomStore = createRoomStore({
   gameKey: "liar",
   serializeRoom: (room) => snapshotRoom(room, { timers: [] })
@@ -93,8 +98,49 @@ app.use((request, response, next) => {
   next();
 });
 
+function serializeUnknownError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+
+  return {
+    value: typeof error === "string" ? error : JSON.stringify(error)
+  };
+}
+
+function getProcessSnapshot() {
+  return {
+    service: SERVICE_NAME,
+    commit: BUILD_COMMIT_SHA,
+    pid: process.pid,
+    bootAt: BOOT_AT,
+    uptimeSeconds: Math.floor(process.uptime()),
+    shuttingDown: isShuttingDown,
+    node: process.version,
+    clients: io.engine?.clientsCount ?? 0,
+    liarRooms: rooms.size,
+    memory: {
+      rss: process.memoryUsage().rss,
+      heapUsed: process.memoryUsage().heapUsed,
+      heapTotal: process.memoryUsage().heapTotal
+    }
+  };
+}
+
+function logProcessEvent(type, details = {}, level = "log") {
+  const logger = typeof console[level] === "function" ? console[level] : console.log;
+  logger(`[server] ${type} ${JSON.stringify({ ...getProcessSnapshot(), ...details })}`);
+}
+
 app.get("/healthz", (_request, response) => {
-  response.status(200).json({ ok: true });
+  response.status(200).json({
+    ok: true,
+    ...getProcessSnapshot()
+  });
 });
 
 app.get(["/", "/index.html"], (_request, response) => {
@@ -1436,6 +1482,8 @@ async function restorePersistedRooms() {
 }
 
 async function bootstrap() {
+  logProcessEvent("bootstrap_start");
+
   await Promise.all([
     attachBangGame(io),
     attachDavinciGame(io),
@@ -1447,11 +1495,12 @@ async function bootstrap() {
   ]);
 
   server.listen(PORT, () => {
-    console.log(`Liar game server listening on http://localhost:${PORT}`);
+    logProcessEvent("listening", {
+      port: PORT,
+      url: `http://localhost:${PORT}`
+    });
   });
 }
-
-let isShuttingDown = false;
 
 async function shutdown(signal) {
   if (isShuttingDown) {
@@ -1459,16 +1508,44 @@ async function shutdown(signal) {
   }
 
   isShuttingDown = true;
-  console.log(`${signal} received, shutting down`);
+  logProcessEvent("shutdown_start", { signal });
+
+  const forceExitTimer = setTimeout(() => {
+    logProcessEvent("shutdown_force_exit", { signal }, "error");
+    process.exit(1);
+  }, 10000);
+  forceExitTimer.unref();
+
+  try {
+    await new Promise((resolve) => {
+      io.close(() => {
+        resolve();
+      });
+    });
+    logProcessEvent("socket_server_closed", { signal });
+  } catch (error) {
+    logProcessEvent("socket_server_close_failed", { signal, error: serializeUnknownError(error) }, "error");
+  }
 
   try {
     await closeRedisClient();
+    logProcessEvent("redis_closed", { signal });
   } catch (error) {
-    console.error("[shutdown] failed to close Redis client", error);
+    logProcessEvent("redis_close_failed", { signal, error: serializeUnknownError(error) }, "error");
   } finally {
+    clearTimeout(forceExitTimer);
+    logProcessEvent("shutdown_complete", { signal });
     process.exit(0);
   }
 }
+
+server.on("error", (error) => {
+  logProcessEvent("http_server_error", { error: serializeUnknownError(error) }, "error");
+});
+
+server.on("close", () => {
+  logProcessEvent("http_server_closed");
+});
 
 process.on("SIGINT", () => {
   shutdown("SIGINT");
@@ -1478,8 +1555,16 @@ process.on("SIGTERM", () => {
   shutdown("SIGTERM");
 });
 
+process.on("uncaughtException", (error, origin) => {
+  logProcessEvent("uncaught_exception", { origin, error: serializeUnknownError(error) }, "error");
+});
+
+process.on("unhandledRejection", (reason) => {
+  logProcessEvent("unhandled_rejection", { error: serializeUnknownError(reason) }, "error");
+});
+
 bootstrap().catch(async (error) => {
-  console.error("[bootstrap] fatal error", error);
+  logProcessEvent("bootstrap_fatal_error", { error: serializeUnknownError(error) }, "error");
   await closeRedisClient().catch(() => {});
   process.exit(1);
 });
