@@ -375,6 +375,59 @@ module.exports = function attachYutGame(rootIo) {
     return player.pieces.filter((piece) => piece.nodeId === "finish").length;
   }
 
+  function unfinishedPlayers(room) {
+    return room.players.filter((player) => finishedCount(player) < PIECES_PER_PLAYER);
+  }
+
+  function isOpeningDoBackdoWrap(piece) {
+    return (
+      piece.nodeId === "o1" &&
+      Array.isArray(piece.history) &&
+      piece.history.length === 2 &&
+      piece.history[0] === "start" &&
+      piece.history[1] === "o1"
+    );
+  }
+
+  function backdoDestinationNode(piece) {
+    if (isOpeningDoBackdoWrap(piece)) {
+      return "o20";
+    }
+
+    return piece.history[piece.history.length - 2] || "start";
+  }
+
+  function buildBackdoHistory(piece, destinationNodeId) {
+    if (destinationNodeId === "o20" && isOpeningDoBackdoWrap(piece)) {
+      return [
+        "start",
+        "o1",
+        "o2",
+        "o3",
+        "o4",
+        "o5",
+        "o6",
+        "o7",
+        "o8",
+        "o9",
+        "o10",
+        "o11",
+        "o12",
+        "o13",
+        "o14",
+        "o15",
+        "o16",
+        "o17",
+        "o18",
+        "o19",
+        "o20"
+      ];
+    }
+
+    const history = piece.history.slice(0, -1);
+    return history.length ? history : ["start"];
+  }
+
   function waitingCount(player) {
     return player.pieces.filter((piece) => piece.nodeId === "start").length;
   }
@@ -588,7 +641,7 @@ module.exports = function attachYutGame(rootIo) {
           return;
         }
 
-        const previousNodeId = entry.anchor.history[entry.anchor.history.length - 2] || "start";
+        const previousNodeId = backdoDestinationNode(entry.anchor);
         const destinationSpotKey = getSpotKey(previousNodeId);
         const movingPieceIds = entry.pieces.map((piece) => piece.id);
         options.push({
@@ -664,21 +717,24 @@ module.exports = function attachYutGame(rootIo) {
     return allLegalMoveOptions(room, player).find((option) => option.id === optionId) || null;
   }
 
-  function finishGame(room, winnerId, reason) {
+  function finishGame(room, result = {}) {
     clearBotTimer(room);
     room.phase = "result";
     room.result = {
-      winnerId,
-      reason
+      winnerId: result.winnerId || null,
+      loserId: result.loserId || null,
+      reason: result.reason || "게임 종료"
     };
     room.currentPlayerId = null;
     room.throwCountRemaining = 0;
     room.pendingRolls = [];
-    setRecentAction(room, reason, winnerId ? "success" : "neutral");
+    setRecentAction(room, room.result.reason, result.winnerId ? "success" : "neutral");
   }
 
   function nextPlayerId(room, fromPlayerId = room.currentPlayerId) {
-    const orderedIds = room.turnOrder.filter((playerId) => room.players.some((player) => player.id === playerId));
+    const orderedIds = room.turnOrder.filter((playerId) =>
+      room.players.some((player) => player.id === playerId && finishedCount(player) < PIECES_PER_PLAYER)
+    );
 
     if (!orderedIds.length) {
       return null;
@@ -705,6 +761,16 @@ module.exports = function attachYutGame(rootIo) {
     const playerId = nextPlayerId(room);
     if (!playerId) {
       finishGame(room, null, "플레이어가 부족해 게임이 종료되었습니다");
+      return;
+    }
+
+    startTurn(room, playerId);
+  }
+
+  function advanceTurn(room) {
+    const playerId = nextPlayerId(room);
+    if (!playerId) {
+      finishGame(room, { reason: "플레이어가 부족해 게임이 종료되었습니다" });
       return;
     }
 
@@ -742,9 +808,7 @@ module.exports = function attachYutGame(rootIo) {
 
     const nextHistory =
       roll.steps < 0
-        ? anchor.history.slice(0, -1).length
-          ? anchor.history.slice(0, -1)
-          : ["start"]
+        ? buildBackdoHistory(anchor, option.destinationNodeId)
         : [...anchor.history, ...(option.pathNodes || [option.destinationNodeId])];
     const destinationNodeId = option.destinationNodeId;
     const destinationSpotKey = getSpotKey(destinationNodeId);
@@ -754,13 +818,16 @@ module.exports = function attachYutGame(rootIo) {
       piece.history = [...nextHistory];
     });
 
-    const capturedPieces = room.players.flatMap((candidate) => {
-      if (candidate.id === player.id) {
-        return [];
-      }
+  const capturedPieces =
+    destinationSpotKey === "start" || destinationSpotKey === "finish"
+      ? []
+      : room.players.flatMap((candidate) => {
+          if (candidate.id === player.id) {
+            return [];
+          }
 
-      return candidate.pieces.filter((piece) => getSpotKey(piece.nodeId) === destinationSpotKey);
-    });
+          return candidate.pieces.filter((piece) => getSpotKey(piece.nodeId) === destinationSpotKey);
+        });
 
     capturedPieces.forEach((piece) => {
       piece.nodeId = "start";
@@ -778,6 +845,7 @@ module.exports = function attachYutGame(rootIo) {
 
     const captureCount = capturedPieces.length;
     const finishCount = movingPieces.filter((piece) => piece.nodeId === "finish").length;
+    const playerCompleted = finishedCount(player) === PIECES_PER_PLAYER;
 
     room.lastMove = {
       id: option.id,
@@ -794,7 +862,7 @@ module.exports = function attachYutGame(rootIo) {
       room.throwCountRemaining += 1;
     }
 
-    if (finishedCount(player) === PIECES_PER_PLAYER) {
+    if (false && finishedCount(player) === PIECES_PER_PLAYER) {
       finishGame(room, player.id, `${player.name} 승리`);
       return true;
     }
@@ -819,6 +887,25 @@ module.exports = function attachYutGame(rootIo) {
       room,
       `${player.name}님이 ${option.destinationLabel}까지 이동했습니다${captureCount ? ` · 잡기 ${captureCount}` : ""}${finishCount ? ` · 도착 ${finishCount}` : ""}`
     );
+
+    if (playerCompleted) {
+      const remainingPlayers = unfinishedPlayers(room);
+
+      if (remainingPlayers.length <= 1) {
+        const loser = remainingPlayers[0] || null;
+        finishGame(room, {
+          loserId: loser?.id || null,
+          reason: loser ? `${loser.name} 패배` : "모든 플레이어가 완주했습니다"
+        });
+        return true;
+      }
+
+      room.throwCountRemaining = 0;
+      room.pendingRolls = [];
+      pushSystemMessage(room, `${player.name}이 모든 말을 완주했습니다.`);
+      advanceTurn(room);
+      return true;
+    }
 
     if (!room.pendingRolls.length && room.throwCountRemaining === 0) {
       advanceTurn(room);
