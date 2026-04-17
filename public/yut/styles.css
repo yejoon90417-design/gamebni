@@ -584,6 +584,10 @@ label,
   background: #b08932;
 }
 
+.piece-chip.color-plum {
+  background: #7a4b7d;
+}
+
 .piece-sprite {
   position: absolute;
   z-index: 2;

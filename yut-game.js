@@ -15,19 +15,20 @@ module.exports = function attachYutGame(rootIo) {
 
   const ROOM_CODE_LENGTH = 5;
   const MIN_PLAYERS = 2;
-  const MAX_PLAYERS = 4;
+  const MAX_PLAYERS = 5;
   const DEFAULT_TARGET_PLAYER_COUNT = 2;
-  const TARGET_PLAYER_OPTIONS = [2, 3, 4];
+  const TARGET_PLAYER_OPTIONS = [2, 3, 4, 5];
   const MAX_CHAT_LENGTH = 140;
   const PIECES_PER_PLAYER = 4;
   const MAX_MESSAGES = 80;
   const BOT_DELAY_MIN_MS = 800;
   const BOT_DELAY_MAX_MS = 1600;
   const PLAYER_COLORS = [
-    { key: "terracotta", label: "주황" },
-    { key: "jade", label: "초록" },
-    { key: "navy", label: "남색" },
-    { key: "gold", label: "노랑" }
+    { key: "terracotta", label: "Terracotta" },
+    { key: "jade", label: "Jade" },
+    { key: "navy", label: "Navy" },
+    { key: "gold", label: "Gold" },
+    { key: "plum", label: "Plum" }
   ];
   const ROLL_RESULTS = [
     { kind: "backdo", label: "빽도", steps: -1, bonus: false, weight: 1 },

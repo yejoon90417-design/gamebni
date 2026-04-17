@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>윷놀이</title>
-    <link rel="stylesheet" href="/yut/styles.css?v=30" />
+    <link rel="stylesheet" href="/yut/styles.css?v=31" />
   </head>
   <body>
     <div class="app">
@@ -12,7 +12,7 @@
         <div class="entry-shell">
           <div class="brand">
             <span class="brand-mark">Y</span>
-            <span>윷놀이</span>
+            <span>YUT</span>
           </div>
 
           <section class="entry-form">
@@ -22,7 +22,7 @@
               <a class="button-link button-secondary" href="/davinci/">DAVINCI</a>
               <a class="button-link button-secondary" href="/omok/">OMOK</a>
               <a class="button-link button-secondary" href="/halli/">HALLI</a>
-              <button type="button" disabled>윷놀이</button>
+              <button type="button" disabled>YUT</button>
             </div>
 
             <div class="field-group">
@@ -36,13 +36,14 @@
                 <option value="2" selected>2명</option>
                 <option value="3">3명</option>
                 <option value="4">4명</option>
+                <option value="5">5명</option>
               </select>
             </div>
 
             <div class="field-group">
               <label>기본 규칙</label>
               <div class="guide-box" id="ruleGuide">
-                빽도를 사용합니다. 상대 말을 잡으면 한 번 더 던지고, 같은 칸의 내 말은 업어서 함께 움직입니다.
+                빽도를 사용하고, 잡기 성공 시 추가 턴을 얻습니다. 같은 칸의 말은 업어서 함께 이동할 수 있습니다.
               </div>
             </div>
 
@@ -66,7 +67,7 @@
           <div class="topbar-left">
             <div class="brand">
               <span class="brand-mark">Y</span>
-              <span>윷놀이</span>
+              <span>YUT</span>
             </div>
             <div class="chip" id="roomBadge">-</div>
             <div class="chip" id="playerBadge">-</div>
@@ -76,7 +77,7 @@
 
           <div class="topbar-actions">
             <div class="bot-tools" id="botTools" hidden>
-              <input id="botCountInput" type="number" min="1" max="2" value="1" />
+              <input id="botCountInput" type="number" min="1" max="3" value="1" />
               <button id="addBotButton" class="button-secondary" type="button">봇 추가</button>
             </div>
             <button id="leaveButton" class="button-secondary" type="button">방 나가기</button>
@@ -127,10 +128,10 @@
 
           <aside class="control-panel">
             <section class="control-card board-info-card">
-              <p class="board-meta-eyebrow">차례</p>
+              <p class="board-meta-eyebrow">상태</p>
               <div class="board-meta">
-                <p class="board-meta-title" id="boardMetaTitle">대기실</p>
-                <p class="board-meta-text" id="boardMetaText">인원이 모이면 시작 버튼으로 판을 엽니다.</p>
+                <p class="board-meta-title" id="boardMetaTitle">대기 중</p>
+                <p class="board-meta-text" id="boardMetaText">인원이 모두 모이면 시작할 수 있습니다.</p>
               </div>
               <p class="recent-action" id="recentActionText">-</p>
             </section>
@@ -139,14 +140,14 @@
               <div class="throw-stage" id="throwStage">
                 <div class="throw-arena" id="throwArena"></div>
                 <p class="throw-result" id="throwResult">대기</p>
-                <p class="throw-prompt" id="throwPrompt">차례가 오면 윷을 던지세요.</p>
+                <p class="throw-prompt" id="throwPrompt">차례가 되면 윷을 던질 수 있습니다.</p>
                 <div class="roll-queue throw-roll-queue" id="rollQueue"></div>
               </div>
               <div class="throw-actions">
                 <button id="startButton" type="button" hidden>시작</button>
                 <button id="throwButton" type="button" hidden>던지기</button>
                 <button id="discardRollButton" class="button-secondary" type="button" hidden>버리기</button>
-                <button id="resetButton" type="button" hidden>다시하기</button>
+                <button id="resetButton" type="button" hidden>다시 하기</button>
               </div>
             </section>
             <div class="move-options" id="moveOptions"></div>
@@ -158,6 +159,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="/shared/session.js"></script>
-    <script src="/yut/app.js?v=30"></script>
+    <script src="/yut/app.js?v=31"></script>
   </body>
 </html>
