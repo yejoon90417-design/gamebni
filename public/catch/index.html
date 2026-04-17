@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Memory</title>
-    <link rel="stylesheet" href="/memory/styles.css?v=13" />
+    <title>Catch</title>
+    <link rel="stylesheet" href="/catch/styles.css?v=8" />
   </head>
   <body>
     <div class="app">
       <section class="screen screen-entry" id="entryScreen">
         <div class="entry-shell">
           <div class="brand">
-            <span class="brand-mark">M</span>
-            <span>MEMORY</span>
+            <span class="brand-mark">C</span>
+            <span>CATCH</span>
           </div>
 
           <section class="entry-form">
@@ -23,8 +23,8 @@
               <a class="button-link button-secondary" href="/omok/">OMOK</a>
               <a class="button-link button-secondary" href="/halli/">HALLI</a>
               <a class="button-link button-secondary" href="/yut/">YUT</a>
-              <button type="button" disabled>MEMORY</button>
-              <a class="button-link button-secondary" href="/catch/">CATCH</a>
+              <a class="button-link button-secondary" href="/memory/">MEMORY</a>
+              <button type="button" disabled>CATCH</button>
             </div>
 
             <div class="field-group">
@@ -33,7 +33,7 @@
             </div>
 
             <div class="field-group">
-              <label for="targetPlayerCountInput">인원</label>
+              <label for="targetPlayerCountInput">목표 인원</label>
               <select id="targetPlayerCountInput">
                 <option value="2" selected>2명</option>
                 <option value="3">3명</option>
@@ -43,21 +43,18 @@
             </div>
 
             <div class="field-group">
-              <label for="cardCountInput">카드 장수</label>
-              <select id="cardCountInput">
-                <option value="16" selected>16장</option>
-                <option value="20">20장</option>
-                <option value="24">24장</option>
-                <option value="30">30장</option>
-                <option value="36">36장</option>
-                <option value="40">40장</option>
+              <label for="roundCountInput">라운드</label>
+              <select id="roundCountInput">
+                <option value="1" selected>1바퀴</option>
+                <option value="2">2바퀴</option>
+                <option value="3">3바퀴</option>
               </select>
             </div>
 
             <div class="field-group">
               <label>기본 규칙</label>
               <div class="guide-box">
-                순서대로 카드 두 장을 뒤집고, 같은 짝이면 가져갑니다. 모든 짝이 정리되면 가장 많은 카드를 가진 플레이어가 승리합니다.
+                한 사람만 그림을 그리고, 나머지는 채팅으로 정답을 맞힙니다. 모든 라운드가 끝나면 점수가 가장 높은 플레이어가 이깁니다.
               </div>
             </div>
 
@@ -80,11 +77,12 @@
         <header class="game-topbar">
           <div class="topbar-left">
             <div class="brand">
-              <span class="brand-mark">M</span>
-              <span>MEMORY</span>
+              <span class="brand-mark">C</span>
+              <span>CATCH</span>
             </div>
             <div class="chip" id="roomBadge">-</div>
             <div class="chip" id="playerBadge">-</div>
+            <div class="chip" id="roundBadge">-</div>
             <div class="chip" id="phaseBadge">-</div>
             <div class="chip chip-status" id="statusBadge">-</div>
           </div>
@@ -111,14 +109,41 @@
           </aside>
 
           <section class="board-panel">
-            <div class="table-stage" id="tableStage">
-              <div class="center-card">
-                <p class="center-status" id="centerStatus">-</p>
-                <p class="center-substatus" id="centerSubstatus">-</p>
+            <div class="board-shell">
+              <div class="board-head">
+                <div class="board-chip-group">
+                  <div class="chip" id="topicBadge" hidden>-</div>
+                  <div class="chip chip-word" id="wordBadge">-</div>
+                  <div class="chip" id="timerBadge">-</div>
+                </div>
               </div>
 
-              <div class="board-shell">
-                <div class="memory-grid" id="boardGrid"></div>
+              <div class="canvas-shell" id="canvasShell">
+                <canvas id="drawingCanvas"></canvas>
+                <div class="canvas-empty" id="canvasEmpty">게임을 시작하면 그림판이 열립니다.</div>
+                <div class="topic-notice" id="topicNotice" hidden>
+                  <div class="topic-notice-card">
+                    <strong class="topic-notice-title" id="topicNoticeTitle"></strong>
+                    <div class="topic-notice-word" id="topicNoticeWord"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tool-row">
+                <div class="color-tools" id="colorTools">
+                  <button type="button" class="tool-color is-active" data-color="#111111" aria-label="검정"></button>
+                  <button type="button" class="tool-color" data-color="#555555" aria-label="회색"></button>
+                  <button type="button" class="tool-color" data-color="#999999" aria-label="밝은 회색"></button>
+                </div>
+
+                <label class="size-tool">
+                  <span>굵기</span>
+                  <input id="brushSizeInput" type="range" min="2" max="18" value="6" />
+                </label>
+
+                <button id="undoButton" class="button-secondary" type="button">되돌리기</button>
+                <button id="redoButton" class="button-secondary" type="button">다시 실행</button>
+                <button id="clearCanvasButton" class="button-secondary" type="button">지우기</button>
               </div>
             </div>
           </section>
@@ -137,7 +162,7 @@
                   id="chatInput"
                   type="text"
                   maxlength="140"
-                  placeholder="채팅 입력"
+                  placeholder="정답 또는 채팅 입력"
                   autocomplete="off"
                   autocapitalize="none"
                   spellcheck="false"
@@ -156,6 +181,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="/shared/session.js"></script>
-    <script src="/memory/app.js?v=9"></script>
+    <script src="/catch/app.js?v=8"></script>
   </body>
 </html>

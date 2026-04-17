@@ -5,6 +5,7 @@ const { Server } = require("socket.io");
 const TOPIC_WORDS = require("./data/topics");
 const attachBangGame = require("./bang-game");
 const attachDavinciGame = require("./davinci-game");
+const attachCatchmindGame = require("./catchmind-game");
 const attachHalliGame = require("./halli-game");
 const attachMemoryGame = require("./memory-game");
 const attachOmokGame = require("./omok-game");
@@ -86,6 +87,9 @@ app.use((request, response, next) => {
     request.path === "/memory" ||
     request.path === "/memory/" ||
     request.path.startsWith("/memory/") ||
+    request.path === "/catch" ||
+    request.path === "/catch/" ||
+    request.path.startsWith("/catch/") ||
     request.path === "/yut" ||
     request.path === "/yut/" ||
     request.path.startsWith("/yut/")
@@ -165,6 +169,10 @@ app.get(["/halli", "/halli/"], (_request, response) => {
 
 app.get(["/memory", "/memory/"], (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "memory", "index.html"));
+});
+
+app.get(["/catch", "/catch/"], (_request, response) => {
+  response.sendFile(path.join(__dirname, "public", "catch", "index.html"));
 });
 
 app.get(["/yut", "/yut/"], (_request, response) => {
@@ -1487,6 +1495,7 @@ async function bootstrap() {
   await Promise.all([
     attachBangGame(io),
     attachDavinciGame(io),
+    attachCatchmindGame(io),
     attachHalliGame(io),
     attachMemoryGame(io),
     attachOmokGame(io),
