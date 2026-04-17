@@ -27,7 +27,8 @@ module.exports = function attachMemoryGame(rootIo) {
   };
   const MAX_CHAT_LENGTH = 140;
   const MAX_MESSAGES = 80;
-  const MISMATCH_DELAY_MS = 1200;
+  const PREVIEW_DURATION_MS = 10000;
+  const MISMATCH_DELAY_MS = 2800;
   const BOT_FLIP_DELAY_MIN_MS = 850;
   const BOT_FLIP_DELAY_MAX_MS = 1450;
 
@@ -137,6 +138,7 @@ module.exports = function attachMemoryGame(rootIo) {
       turnNumber: 0,
       cards: [],
       flippedCardIds: [],
+      preview: null,
       pendingHide: null,
       recentAction: null,
       result: null,
@@ -174,6 +176,7 @@ module.exports = function attachMemoryGame(rootIo) {
     room.turnOrder = Array.isArray(snapshot.turnOrder) ? snapshot.turnOrder : [];
     room.cards = Array.isArray(snapshot.cards) ? snapshot.cards : [];
     room.flippedCardIds = Array.isArray(snapshot.flippedCardIds) ? snapshot.flippedCardIds : [];
+    room.preview = snapshot.preview || null;
     room.pendingHide = snapshot.pendingHide || null;
     room.recentAction = snapshot.recentAction || null;
     room.result = snapshot.result || null;
@@ -286,6 +289,7 @@ module.exports = function attachMemoryGame(rootIo) {
     room.turnNumber = 0;
     room.cards = [];
     room.flippedCardIds = [];
+    room.preview = null;
     room.pendingHide = null;
     room.recentAction = null;
     room.result = null;
@@ -318,6 +322,7 @@ module.exports = function attachMemoryGame(rootIo) {
     room.currentPlayerId = playerId;
     room.turnNumber += 1;
     room.flippedCardIds = [];
+    room.preview = null;
     room.pendingHide = null;
     const currentPlayer = getPlayer(room, playerId);
     setRecentAction(room, `${currentPlayer?.name || "플레이어"} 차례`, "neutral");
@@ -378,8 +383,8 @@ module.exports = function attachMemoryGame(rootIo) {
     setRecentAction(room, reason, winnerIds.length === 1 ? "success" : "neutral");
   }
 
-  function serializeCard(card) {
-    const visible = card.faceUp || Boolean(card.matchedBy);
+  function serializeCard(room, card) {
+    const visible = room.phase === "preview" || card.faceUp || Boolean(card.matchedBy);
     return {
       id: card.id,
       faceUp: card.faceUp,
@@ -418,13 +423,14 @@ module.exports = function attachMemoryGame(rootIo) {
       turnNumber: room.turnNumber,
       recentAction: room.recentAction,
       result: room.result,
+      previewMs: room.preview ? Math.max(room.preview.dueAt - Date.now(), 0) : 0,
       pendingHideMs: room.pendingHide ? Math.max(room.pendingHide.dueAt - Date.now(), 0) : 0,
       remainingCards: room.cards.filter((card) => !card.matchedBy).length,
       canFlip:
         room.phase === "playing" &&
         me?.id === room.currentPlayerId &&
         !room.pendingHide,
-      cards: room.cards.map(serializeCard),
+      cards: room.cards.map((card) => serializeCard(room, card)),
       messages: room.messages,
       players: room.players.map((player) => serializePlayer(room, player)),
       me: me ? serializePlayer(room, me) : null
@@ -606,6 +612,40 @@ module.exports = function attachMemoryGame(rootIo) {
     broadcastRoom(room);
   }
 
+  function resolvePreview(roomCode) {
+    const room = getRoom(roomCode);
+    if (!room || room.phase !== "preview" || !room.preview) {
+      return;
+    }
+
+    clearResolutionTimer(room);
+    room.preview = null;
+
+    const firstPlayerId = room.turnOrder[0] || null;
+    if (!firstPlayerId) {
+      finishGame(room, [], "게임 종료");
+      broadcastRoom(room, { skipFlow: true });
+      return;
+    }
+
+    room.phase = "playing";
+    startTurn(room, firstPlayerId);
+    broadcastRoom(room);
+  }
+
+  function schedulePreview(room) {
+    clearResolutionTimer(room);
+
+    if (!room?.preview) {
+      return;
+    }
+
+    const delay = Math.max(room.preview.dueAt - Date.now(), 20);
+    room.resolutionTimer = setTimeout(() => {
+      resolvePreview(room.code);
+    }, delay);
+  }
+
   function schedulePendingHide(room) {
     clearResolutionTimer(room);
 
@@ -621,14 +661,19 @@ module.exports = function attachMemoryGame(rootIo) {
 
   function startGame(room) {
     clearAllTimers(room);
-    room.phase = "playing";
+    room.phase = "preview";
     room.result = null;
     room.cards = createDeck(room.totalCardCount);
     room.turnOrder = room.players.map((player) => player.id);
+    room.currentPlayerId = null;
     room.turnNumber = 0;
     room.flippedCardIds = [];
+    room.preview = {
+      dueAt: Date.now() + PREVIEW_DURATION_MS
+    };
     room.pendingHide = null;
-    startTurn(room, room.turnOrder[0]);
+    setRecentAction(room, "전체 카드 10초 공개", "neutral");
+    schedulePreview(room);
   }
 
   function removePlayer(playerId) {
@@ -921,6 +966,9 @@ module.exports = function attachMemoryGame(rootIo) {
       const room = hydrateRoom(snapshot);
       rooms.set(room.code, room);
       restoreRoomPresence(room, disconnectTimers, removePlayer, DISCONNECT_GRACE_MS);
+      if (room.preview) {
+        schedulePreview(room);
+      }
       if (room.pendingHide) {
         schedulePendingHide(room);
       }

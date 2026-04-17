@@ -16,7 +16,9 @@ const state = {
   lastChatLogMessageId: "",
   flipCardIds: new Set(),
   transferCleanupTimerId: null,
-  lastClaimSignature: ""
+  lastClaimSignature: "",
+  roomUpdatedAt: 0,
+  liveStatusTimerId: null
 };
 
 const elements = {
@@ -173,6 +175,37 @@ function resizeBoardGrid() {
   elements.boardGrid.style.height = `${Math.max(gridHeight, 1)}px`;
 }
 
+function previewSecondsLeft(room = state.room) {
+  if (!room?.previewMs) {
+    return 0;
+  }
+
+  const elapsed = Math.max(Date.now() - (state.roomUpdatedAt || Date.now()), 0);
+  return Math.max(Math.ceil((room.previewMs - elapsed) / 1000), 0);
+}
+
+function clearLiveStatusTimer() {
+  if (!state.liveStatusTimerId) {
+    return;
+  }
+
+  clearTimeout(state.liveStatusTimerId);
+  state.liveStatusTimerId = null;
+}
+
+function scheduleLiveStatusRender() {
+  clearLiveStatusTimer();
+
+  if (!state.room || state.room.phase !== "preview" || previewSecondsLeft() <= 0) {
+    return;
+  }
+
+  state.liveStatusTimerId = window.setTimeout(() => {
+    state.liveStatusTimerId = null;
+    render();
+  }, 250);
+}
+
 function displayStatus() {
   if (state.flash) {
     return state.flash;
@@ -184,6 +217,10 @@ function displayStatus() {
 
   if (state.room.phase === "lobby") {
     return `${state.room.players.length}/${state.room.targetPlayerCount}명 입장 · ${state.room.totalCardCount}장`;
+  }
+
+  if (state.room.phase === "preview") {
+    return `전체 카드 공개 ${previewSecondsLeft()}초`;
   }
 
   if (state.room.phase === "playing") {
@@ -207,6 +244,10 @@ function displayCenterStatus() {
     return "방 준비";
   }
 
+  if (state.room.phase === "preview") {
+    return "전체 카드 공개";
+  }
+
   if (state.room.phase === "playing") {
     if (isMyTurn()) {
       return "내 차례";
@@ -228,6 +269,10 @@ function displayCenterSubstatus() {
     return `인원 ${state.room.players.length}/${state.room.targetPlayerCount} · 카드 ${state.room.totalCardCount}장`;
   }
 
+  if (state.room.phase === "preview") {
+    return `${previewSecondsLeft()}초 동안 모든 카드를 외우세요`;
+  }
+
   if (state.room.phase === "playing") {
     const remainingPairs = Math.floor(state.room.remainingCards / 2);
     if (state.room.pendingHideMs > 0) {
@@ -243,7 +288,8 @@ function renderHeader() {
   const room = state.room;
   elements.roomBadge.textContent = `방 ${room.code}`;
   elements.playerBadge.textContent = `${room.players.length}/${room.targetPlayerCount}명 · ${room.totalCardCount}장`;
-  elements.phaseBadge.textContent = PHASE_TEXT[room.phase] || room.phase;
+  elements.phaseBadge.textContent =
+    room.phase === "preview" ? "공개" : PHASE_TEXT[room.phase] || room.phase;
   elements.statusBadge.textContent = displayStatus();
 }
 
@@ -556,6 +602,7 @@ function renderBoard() {
   elements.boardGrid.innerHTML = "";
 
   const fragment = document.createDocumentFragment();
+  const previewActive = state.room.phase === "preview";
 
   state.room.cards.forEach((card) => {
     const button = document.createElement("button");
@@ -563,7 +610,7 @@ function renderBoard() {
     button.className = "memory-card";
     button.dataset.cardId = card.id;
 
-    if (card.faceUp) {
+    if (card.faceUp || previewActive) {
       button.classList.add("is-face-up");
     }
     if (card.matched) {
@@ -573,7 +620,7 @@ function renderBoard() {
       button.classList.add("is-flipping");
     }
 
-    const visible = card.faceUp || card.matched;
+    const visible = previewActive || card.faceUp || card.matched;
     button.disabled = !state.room.canFlip || visible;
     button.addEventListener("click", () => {
       flipCard(card.id);
@@ -707,6 +754,7 @@ function syncRecommendedCardCount() {
 function render() {
   renderScreens();
   if (!state.room) {
+    clearLiveStatusTimer();
     renderChatComposer();
     return;
   }
@@ -785,10 +833,12 @@ function applyRoomUpdate(room) {
   state.flash = "";
   state.flipCardIds = detectFlipAnimations(previousRoom, room);
   state.room = room;
+  state.roomUpdatedAt = Date.now();
   state.roomCode = room.code;
   elements.roomInput.value = room.code;
   rememberSessionRoom();
   render();
+  scheduleLiveStatusRender();
 
   const signature = claimSignature(claims);
   if (signature && signature !== state.lastClaimSignature) {
@@ -806,6 +856,8 @@ function clearRoomState() {
   state.lastChatLogMessageId = "";
   state.flipCardIds.clear();
   state.lastClaimSignature = "";
+  state.roomUpdatedAt = 0;
+  clearLiveStatusTimer();
   appSession.clearRoom();
   clearTransferEffects();
   render();
