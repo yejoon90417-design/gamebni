@@ -202,7 +202,13 @@ function scheduleLiveStatusRender() {
 
   state.liveStatusTimerId = window.setTimeout(() => {
     state.liveStatusTimerId = null;
-    render();
+    if (!state.room || state.room.phase !== "preview") {
+      return;
+    }
+
+    renderHeader();
+    renderCenter();
+    scheduleLiveStatusRender();
   }, 250);
 }
 
