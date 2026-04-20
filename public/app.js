@@ -439,10 +439,6 @@ function seatTags(room, player) {
     tags.push("나");
   }
 
-  if (player.isHost) {
-    tags.push("호스트");
-  }
-
   if (player.isBot) {
     tags.push("BOT");
   }
