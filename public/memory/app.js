@@ -59,6 +59,26 @@ appSession.hydrateEntry({
   roomInput: elements.roomInput
 });
 
+const ENTRY_PATH = "/memory/";
+const PLAY_PATH = "/memory/play";
+
+function isPlayRoute() {
+  const { pathname } = window.location;
+  return pathname === PLAY_PATH || pathname === `${PLAY_PATH}/`;
+}
+
+function navigateToPlay() {
+  if (!isPlayRoute()) {
+    window.location.replace(PLAY_PATH);
+  }
+}
+
+function navigateToEntry() {
+  if (isPlayRoute()) {
+    window.location.replace(ENTRY_PATH);
+  }
+}
+
 const PHASE_TEXT = {
   lobby: "대기",
   playing: "진행",
@@ -867,6 +887,7 @@ function clearRoomState() {
   appSession.clearRoom();
   clearTransferEffects();
   render();
+  navigateToEntry();
 }
 
 function showPendingGameScreen(code) {
@@ -907,6 +928,8 @@ async function createRoom() {
     state.roomCode = response.code || "";
     elements.roomInput.value = response.code || "";
     rememberSessionRoom(response.code, name);
+    navigateToPlay();
+    return;
     showPendingGameScreen(response.code);
 
     const room = response.room || (await syncRoomState(response.code));
@@ -954,6 +977,8 @@ async function joinRoom() {
     state.roomCode = response.code || code;
     elements.roomInput.value = response.code || code;
     rememberSessionRoom(response.code || code, name);
+    navigateToPlay();
+    return;
     showPendingGameScreen(response.code || code);
 
     const room = response.room || (await syncRoomState(response.code || code));
@@ -1087,7 +1112,12 @@ async function restoreSavedRoom() {
   }
 
   const saved = appSession.getSavedRoom();
+  if (!isPlayRoute()) {
+    return;
+  }
+
   if (!saved?.roomCode) {
+    navigateToEntry();
     return;
   }
 
@@ -1106,6 +1136,7 @@ async function restoreSavedRoom() {
       state.restoreAttempted = false;
       state.pendingJoin = false;
       renderScreens();
+      navigateToEntry();
       return;
     }
 
@@ -1124,6 +1155,7 @@ async function restoreSavedRoom() {
     state.restoreAttempted = false;
     state.pendingJoin = false;
     renderScreens();
+    navigateToEntry();
   }
 }
 

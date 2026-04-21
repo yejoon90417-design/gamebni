@@ -62,6 +62,26 @@ appSession.hydrateEntry({
   roomInput: elements.roomInput
 });
 
+const ENTRY_PATH = "/omok/";
+const PLAY_PATH = "/omok/play";
+
+function isPlayRoute() {
+  const { pathname } = window.location;
+  return pathname === PLAY_PATH || pathname === `${PLAY_PATH}/`;
+}
+
+function navigateToPlay() {
+  if (!isPlayRoute()) {
+    window.location.replace(PLAY_PATH);
+  }
+}
+
+function navigateToEntry() {
+  if (isPlayRoute()) {
+    window.location.replace(ENTRY_PATH);
+  }
+}
+
 function currentName() {
   return elements.nameInput.value.trim();
 }
@@ -673,6 +693,7 @@ async function createRoom() {
   state.roomCode = response.code;
   elements.roomInput.value = response.code;
   rememberSessionRoom(response.code);
+  navigateToPlay();
 }
 
 async function joinRoom() {
@@ -689,6 +710,7 @@ async function joinRoom() {
   setEntryStatus("");
   state.roomCode = response.code;
   rememberSessionRoom(response.code);
+  navigateToPlay();
 }
 
 async function restoreSavedRoom() {
@@ -697,7 +719,12 @@ async function restoreSavedRoom() {
   }
 
   const saved = appSession.getSavedRoom();
+  if (!isPlayRoute()) {
+    return;
+  }
+
   if (!saved?.roomCode) {
+    navigateToEntry();
     return;
   }
 
@@ -718,6 +745,7 @@ async function restoreSavedRoom() {
 
   if (!response?.ok) {
     appSession.clearRoom();
+    navigateToEntry();
     return;
   }
 
@@ -744,6 +772,7 @@ function resetLocalRoomState(message = "방을 나갔습니다") {
   elements.chatInput.value = "";
   renderRoom();
   setEntryStatus(message);
+  navigateToEntry();
 }
 
 async function leaveRoom() {

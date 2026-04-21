@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs/promises");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -69,6 +70,8 @@ const rooms = new Map();
 const disconnectTimers = new Map();
 const DISCONNECT_GRACE_MS = getDisconnectGraceMs();
 let isShuttingDown = false;
+const ADSENSE_LOADER_PATTERN =
+  /\s*<script async src="https:\/\/pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js\?client=ca-pub-1492932683312516" crossorigin="anonymous"><\/script>\r?\n?/;
 const roomStore = createRoomStore({
   gameKey: "liar",
   serializeRoom: (room) => snapshotRoom(room, { timers: [] })
@@ -147,37 +150,57 @@ app.get("/healthz", (_request, response) => {
   });
 });
 
-app.get(["/", "/index.html"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "index.html"));
-});
+async function sendHtmlPage(response, filePath, options = {}) {
+  const { stripAdsense = false, playMode = false } = options;
 
-app.get(["/bang", "/bang/"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "bang", "index.html"));
-});
+  try {
+    let html = await fs.readFile(filePath, "utf8");
 
-app.get(["/davinci", "/davinci/"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "davinci", "index.html"));
-});
+    if (stripAdsense) {
+      html = html.replace(ADSENSE_LOADER_PATTERN, "");
+    }
 
-app.get(["/omok", "/omok/"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "omok", "index.html"));
-});
+    if (playMode) {
+      html = html
+        .replace('id="entryScreen">', 'id="entryScreen" hidden>')
+        .replace('id="gameScreen" hidden>', 'id="gameScreen">');
+    }
 
-app.get(["/halli", "/halli/"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "halli", "index.html"));
-});
+    response.type("html").send(html);
+  } catch (error) {
+    response.status(500).send("Failed to load page.");
+    logProcessEvent("page-load-failed", {
+      filePath,
+      error: serializeUnknownError(error)
+    }, "error");
+  }
+}
 
-app.get(["/memory", "/memory/"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "memory", "index.html"));
-});
+function registerPageRoutes(entryRoutes, playRoutes, filePath) {
+  app.get(entryRoutes, (_request, response) => {
+    response.sendFile(filePath);
+  });
 
-app.get(["/catch", "/catch/"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "catch", "index.html"));
-});
+  app.get(playRoutes, async (_request, response) => {
+    await sendHtmlPage(response, filePath, {
+      stripAdsense: true,
+      playMode: true
+    });
+  });
+}
 
-app.get(["/yut", "/yut/"], (_request, response) => {
-  response.sendFile(path.join(__dirname, "public", "yut", "index.html"));
-});
+registerPageRoutes(["/", "/index.html"], ["/play", "/play/"], path.join(__dirname, "public", "index.html"));
+registerPageRoutes(["/bang", "/bang/"], ["/bang/play", "/bang/play/"], path.join(__dirname, "public", "bang", "index.html"));
+registerPageRoutes(
+  ["/davinci", "/davinci/"],
+  ["/davinci/play", "/davinci/play/"],
+  path.join(__dirname, "public", "davinci", "index.html")
+);
+registerPageRoutes(["/omok", "/omok/"], ["/omok/play", "/omok/play/"], path.join(__dirname, "public", "omok", "index.html"));
+registerPageRoutes(["/halli", "/halli/"], ["/halli/play", "/halli/play/"], path.join(__dirname, "public", "halli", "index.html"));
+registerPageRoutes(["/memory", "/memory/"], ["/memory/play", "/memory/play/"], path.join(__dirname, "public", "memory", "index.html"));
+registerPageRoutes(["/catch", "/catch/"], ["/catch/play", "/catch/play/"], path.join(__dirname, "public", "catch", "index.html"));
+registerPageRoutes(["/yut", "/yut/"], ["/yut/play", "/yut/play/"], path.join(__dirname, "public", "yut", "index.html"));
 
 app.use(express.static(path.join(__dirname, "public")));
 

@@ -79,6 +79,26 @@ appSession.hydrateEntry({
   roomInput: elements.roomInput
 });
 
+const ENTRY_PATH = "/catch/";
+const PLAY_PATH = "/catch/play";
+
+function isPlayRoute() {
+  const { pathname } = window.location;
+  return pathname === PLAY_PATH || pathname === `${PLAY_PATH}/`;
+}
+
+function navigateToPlay() {
+  if (!isPlayRoute()) {
+    window.location.replace(PLAY_PATH);
+  }
+}
+
+function navigateToEntry() {
+  if (isPlayRoute()) {
+    window.location.replace(ENTRY_PATH);
+  }
+}
+
 function currentName() {
   return elements.nameInput.value.trim();
 }
@@ -569,6 +589,10 @@ async function createRoom() {
     return;
   }
 
+  rememberSessionRoom(response.code, name);
+  navigateToPlay();
+  return;
+
   state.pendingJoin = true;
   renderScreens();
 
@@ -608,6 +632,10 @@ async function joinRoom() {
     return;
   }
 
+  rememberSessionRoom(response.code || code, name);
+  navigateToPlay();
+  return;
+
   state.pendingJoin = true;
   renderScreens();
 
@@ -635,6 +663,7 @@ async function leaveRoom() {
   clearLiveTimer();
   renderScreens();
   render();
+  navigateToEntry();
 }
 
 async function startGame() {
@@ -855,7 +884,12 @@ async function tryRestoreRoom() {
 
   state.restoreAttempted = true;
   const saved = appSession.getSavedRoom();
+  if (!isPlayRoute()) {
+    return;
+  }
+
   if (!saved) {
+    navigateToEntry();
     return;
   }
 
@@ -868,6 +902,7 @@ async function tryRestoreRoom() {
   }
 
   if (!saved.name || !saved.roomCode) {
+    navigateToEntry();
     return;
   }
 
@@ -878,10 +913,18 @@ async function tryRestoreRoom() {
 
   if (!response?.ok) {
     appSession.clearRoom();
+    navigateToEntry();
     return;
   }
 
-  updateRoom(response.room);
+  const room = response.room || (await syncRoomState(saved.roomCode));
+  if (!room) {
+    appSession.clearRoom();
+    navigateToEntry();
+    return;
+  }
+
+  updateRoom(room);
 }
 
 socket.on("room:update", (room) => {

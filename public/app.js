@@ -94,6 +94,26 @@ appSession.hydrateEntry({
   roomInput: elements.roomInput
 });
 
+const ENTRY_PATH = "/";
+const PLAY_PATH = "/play";
+
+function isPlayRoute() {
+  const { pathname } = window.location;
+  return pathname === PLAY_PATH || pathname === `${PLAY_PATH}/`;
+}
+
+function navigateToPlay() {
+  if (!isPlayRoute()) {
+    window.location.replace(PLAY_PATH);
+  }
+}
+
+function navigateToEntry() {
+  if (isPlayRoute()) {
+    window.location.replace(ENTRY_PATH);
+  }
+}
+
 const PHASE_TEXT = {
   lobby: "대기",
   discussion: "발언",
@@ -1110,6 +1130,7 @@ function resetLocalRoomState(message = "방을 나갔습니다") {
   elements.roleModal.hidden = true;
   renderRoom();
   setEntryStatus(message);
+  navigateToEntry();
 }
 
 async function createRoom() {
@@ -1127,6 +1148,7 @@ async function createRoom() {
   elements.roomInput.value = response.code;
   rememberSessionRoom(response.code);
   setEntryStatus("");
+  navigateToPlay();
 }
 
 async function submitLiarGuess(value, fallbackMessage) {
@@ -1158,6 +1180,7 @@ async function joinRoom() {
   state.roomCode = response.code;
   rememberSessionRoom(response.code);
   setEntryStatus("");
+  navigateToPlay();
 }
 
 async function leaveRoom() {
@@ -1179,7 +1202,12 @@ async function restoreSavedRoom() {
   }
 
   const saved = appSession.getSavedRoom();
+  if (!isPlayRoute()) {
+    return;
+  }
+
   if (!saved?.roomCode) {
+    navigateToEntry();
     return;
   }
 
@@ -1200,6 +1228,7 @@ async function restoreSavedRoom() {
 
   if (!response?.ok) {
     appSession.clearRoom();
+    navigateToEntry();
   } else {
     state.roomCode = response.code;
     rememberSessionRoom(response.code, currentName());
