@@ -1082,4 +1082,4 @@ const guides = [
   }
 ];
 
-module.exports = guides;
+module.exports = [...guides, ...require("./guides-extra")];
