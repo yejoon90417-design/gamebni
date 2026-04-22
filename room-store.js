@@ -40,37 +40,50 @@ function createRoomStore({ gameKey, serializeRoom = (room) => room, ttlSeconds =
   }
 
   async function restoreAll() {
-    const client = await getRedisClient();
+    let client;
+
+    try {
+      client = await getRedisClient();
+    } catch (error) {
+      console.error(`[room-store:${gameKey}] restore skipped`, error);
+      return [];
+    }
+
     if (!client) {
       return [];
     }
 
-    const codes = (await client.sMembers(indexKey))
-      .map(normalizeRoomCode)
-      .filter(Boolean);
-    const snapshots = [];
-    const missingCodes = [];
+    try {
+      const codes = (await client.sMembers(indexKey))
+        .map(normalizeRoomCode)
+        .filter(Boolean);
+      const snapshots = [];
+      const missingCodes = [];
 
-    for (const code of codes) {
-      const raw = await client.get(roomKey(code));
-      if (!raw) {
-        missingCodes.push(code);
-        continue;
+      for (const code of codes) {
+        const raw = await client.get(roomKey(code));
+        if (!raw) {
+          missingCodes.push(code);
+          continue;
+        }
+
+        try {
+          snapshots.push(JSON.parse(raw));
+        } catch (error) {
+          console.error(`[room-store:${gameKey}] invalid snapshot for ${code}`, error);
+          missingCodes.push(code);
+        }
       }
 
-      try {
-        snapshots.push(JSON.parse(raw));
-      } catch (error) {
-        console.error(`[room-store:${gameKey}] invalid snapshot for ${code}`, error);
-        missingCodes.push(code);
+      if (missingCodes.length) {
+        await client.sRem(indexKey, ...missingCodes);
       }
-    }
 
-    if (missingCodes.length) {
-      await client.sRem(indexKey, ...missingCodes);
+      return snapshots;
+    } catch (error) {
+      console.error(`[room-store:${gameKey}] restore failed`, error);
+      return [];
     }
-
-    return snapshots;
   }
 
   function save(room) {

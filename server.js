@@ -4,6 +4,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const TOPIC_WORDS = require("./data/topics");
+const GUIDE_ARTICLES = require("./data/guides");
 const attachBangGame = require("./bang-game");
 const attachDavinciGame = require("./davinci-game");
 const attachCatchmindGame = require("./catchmind-game");
@@ -43,6 +44,17 @@ const DEFAULT_VOTE_MODE = "single";
 const VOTE_MODES = new Set(["single", "elimination"]);
 const DEFAULT_LIAR_COUNT = 1;
 const LIAR_COUNT_OPTIONS = [1, 2];
+const GUIDE_ARTICLE_BY_SLUG = new Map(GUIDE_ARTICLES.map((article) => [article.slug, article]));
+const GUIDE_GAME_LINKS = {
+  LIAR: "/",
+  BANG: "/bang/",
+  DAVINCI: "/davinci/",
+  OMOK: "/omok/",
+  HALLI: "/halli/",
+  YUT: "/yut/",
+  MEMORY: "/memory/",
+  CATCH: "/catch/"
+};
 const REACTION_EMOJIS = {
   heart: "❤️",
   poop: "💩",
@@ -201,6 +213,279 @@ registerPageRoutes(["/halli", "/halli/"], ["/halli/play", "/halli/play/"], path.
 registerPageRoutes(["/memory", "/memory/"], ["/memory/play", "/memory/play/"], path.join(__dirname, "public", "memory", "index.html"));
 registerPageRoutes(["/catch", "/catch/"], ["/catch/play", "/catch/play/"], path.join(__dirname, "public", "catch", "index.html"));
 registerPageRoutes(["/yut", "/yut/"], ["/yut/play", "/yut/play/"], path.join(__dirname, "public", "yut", "index.html"));
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return character;
+    }
+  });
+}
+
+function guideDescription(article) {
+  return String(article?.summary || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+function guideGameHref(game) {
+  return GUIDE_GAME_LINKS[game] || "/";
+}
+
+function renderGuideCard(article, options = {}) {
+  const { compact = false } = options;
+  const cardClassName = compact ? "guide-card guide-card-compact" : "guide-card";
+
+  return `
+    <article class="${cardClassName}">
+      <p class="guide-card-meta">${escapeHtml(article.game)} <span aria-hidden="true">/</span> ${escapeHtml(article.category)}</p>
+      <h2><a href="/guides/${encodeURIComponent(article.slug)}">${escapeHtml(article.title)}</a></h2>
+      <p class="guide-card-summary">${escapeHtml(article.summary)}</p>
+      <div class="guide-card-footer">
+        <span>${escapeHtml(article.readTime || "4 min read")}</span>
+        <a class="guide-inline-link" href="${guideGameHref(article.game)}">Play ${escapeHtml(article.game)}</a>
+      </div>
+    </article>
+  `;
+}
+
+function renderGuideLayout({ title, description, body, pathname = "/guides/" }) {
+  const pageTitle = `${title} | Liar Game Guides`;
+  const canonicalPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+
+  return `<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${escapeHtml(pageTitle)}</title>
+    <meta name="description" content="${escapeHtml(description)}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="${escapeHtml(pageTitle)}" />
+    <meta property="og:description" content="${escapeHtml(description)}" />
+    <link rel="canonical" href="${escapeHtml(canonicalPath)}" />
+    <link rel="stylesheet" href="/guides.css" />
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1492932683312516" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <div class="guide-app">
+      <header class="guide-topbar">
+        <a class="guide-brand" href="/">
+          <span class="guide-brand-mark" aria-hidden="true">L</span>
+          <span>Liar Games</span>
+        </a>
+        <nav class="guide-nav" aria-label="Guide navigation">
+          <a href="/">Home</a>
+          <a href="/guides/">Guides</a>
+          <a href="/play/">Play Liar</a>
+        </nav>
+      </header>
+      ${body}
+    </div>
+  </body>
+</html>`;
+}
+
+function relatedGuidesFor(article, limit = 3) {
+  return GUIDE_ARTICLES.filter((candidate) => candidate.slug !== article.slug)
+    .sort((left, right) => {
+      const leftScore = Number(left.game === article.game) + Number(left.category === article.category);
+      const rightScore = Number(right.game === article.game) + Number(right.category === article.category);
+      return rightScore - leftScore;
+    })
+    .slice(0, limit);
+}
+
+function renderGuideIndexPage() {
+  const featuredGuides = GUIDE_ARTICLES.slice(0, 6).map((article) => renderGuideCard(article)).join("");
+  const guideGroups = GUIDE_ARTICLES.reduce((groups, article) => {
+    const currentGroup = groups.get(article.game) || [];
+    currentGroup.push(article);
+    groups.set(article.game, currentGroup);
+    return groups;
+  }, new Map());
+
+  const groupedMarkup = Array.from(guideGroups.entries())
+    .map(([game, articles]) => {
+      const cards = articles.map((article) => renderGuideCard(article, { compact: true })).join("");
+      return `
+        <section class="guide-group">
+          <div class="guide-group-head">
+            <div>
+              <p class="guide-kicker">${escapeHtml(game)} Guides</p>
+              <h2>${escapeHtml(game)} strategy, rules, and host tips</h2>
+            </div>
+            <a class="guide-inline-link" href="${guideGameHref(game)}">Play ${escapeHtml(game)}</a>
+          </div>
+          <div class="guide-compact-grid">
+            ${cards}
+          </div>
+        </section>
+      `;
+    })
+    .join("");
+
+  return renderGuideLayout({
+    title: "Game Guides",
+    description:
+      "Original how-to guides for Liar, Bang, Davinci, Omok, Halli Galli, Memory, Catch, and Yutnori party games.",
+    pathname: "/guides/",
+    body: `
+      <main class="guide-home">
+        <section class="guide-hero">
+          <div>
+            <p class="guide-kicker">Guide Hub</p>
+            <h1>Original guide pages for every game on the site</h1>
+            <p class="guide-lead">
+              Rules, host flow, fair-play notes, opening tips, and beginner strategy pages that can be read without logging in.
+            </p>
+          </div>
+          <div class="guide-hero-panel">
+            <strong>${GUIDE_ARTICLES.length}</strong>
+            <span>published guide pages</span>
+            <p>Each guide links back to its matching game lobby so visitors and crawlers can move between content and play pages.</p>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <div class="guide-section-head">
+            <div>
+              <p class="guide-kicker">Featured</p>
+              <h2>Start with the highest-value pages</h2>
+            </div>
+          </div>
+          <div class="guide-grid">
+            ${featuredGuides}
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <div class="guide-section-head">
+            <div>
+              <p class="guide-kicker">Library</p>
+              <h2>Browse by game</h2>
+            </div>
+          </div>
+          ${groupedMarkup}
+        </section>
+      </main>
+    `
+  });
+}
+
+function renderGuideDetailPage(article) {
+  const sectionMarkup = article.sections
+    .map((section) => {
+      const paragraphs = (section.paragraphs || [])
+        .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
+        .join("");
+      const bullets =
+        Array.isArray(section.bullets) && section.bullets.length
+          ? `<ul>${section.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join("")}</ul>`
+          : "";
+
+      return `
+        <section class="guide-copy-section">
+          <h2>${escapeHtml(section.heading)}</h2>
+          ${paragraphs}
+          ${bullets}
+        </section>
+      `;
+    })
+    .join("");
+
+  const relatedMarkup = relatedGuidesFor(article)
+    .map((candidate) => renderGuideCard(candidate, { compact: true }))
+    .join("");
+
+  return renderGuideLayout({
+    title: article.title,
+    description: guideDescription(article),
+    pathname: `/guides/${article.slug}`,
+    body: `
+      <main class="guide-detail-shell">
+        <article class="guide-detail">
+          <div class="guide-breadcrumbs">
+            <a href="/">Home</a>
+            <span>/</span>
+            <a href="/guides/">Guides</a>
+            <span>/</span>
+            <span>${escapeHtml(article.game)}</span>
+          </div>
+          <header class="guide-detail-hero">
+            <p class="guide-kicker">${escapeHtml(article.game)} <span aria-hidden="true">/</span> ${escapeHtml(article.category)}</p>
+            <h1>${escapeHtml(article.title)}</h1>
+            <p class="guide-lead">${escapeHtml(article.summary)}</p>
+            <div class="guide-detail-meta">
+              <span>${escapeHtml(article.readTime || "4 min read")}</span>
+              <a class="guide-inline-link" href="${guideGameHref(article.game)}">Play ${escapeHtml(article.game)}</a>
+            </div>
+          </header>
+          <div class="guide-copy">
+            ${sectionMarkup}
+          </div>
+        </article>
+
+        <aside class="guide-sidebar">
+          <section class="guide-side-panel">
+            <p class="guide-kicker">Quick Jump</p>
+            <h2>Play after reading</h2>
+            <p>Move straight into the matching lobby when you want to test the rules or host flow in a real room.</p>
+            <a class="guide-button" href="${guideGameHref(article.game)}">Open ${escapeHtml(article.game)}</a>
+          </section>
+
+          <section class="guide-side-panel">
+            <p class="guide-kicker">Related Guides</p>
+            <div class="guide-compact-grid">
+              ${relatedMarkup}
+            </div>
+          </section>
+        </aside>
+      </main>
+    `
+  });
+}
+
+app.get(["/guides", "/guides/"], (_request, response) => {
+  response.type("html").send(renderGuideIndexPage());
+});
+
+app.get("/guides/:slug", (request, response) => {
+  const article = GUIDE_ARTICLE_BY_SLUG.get(request.params.slug);
+
+  if (!article) {
+    response.status(404).type("html").send(
+      renderGuideLayout({
+        title: "Guide not found",
+        description: "The requested guide page does not exist.",
+        pathname: request.path,
+        body: `
+          <main class="guide-empty-state">
+            <p class="guide-kicker">404</p>
+            <h1>Guide not found</h1>
+            <p>The guide URL you requested does not exist. Use the guide hub to browse the published pages.</p>
+            <a class="guide-button" href="/guides/">Back to Guides</a>
+          </main>
+        `
+      })
+    );
+    return;
+  }
+
+  response.type("html").send(renderGuideDetailPage(article));
+});
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -1512,19 +1797,37 @@ async function restorePersistedRooms() {
   }
 }
 
+function startBootstrapTask(taskName, task) {
+  return Promise.resolve()
+    .then(task)
+    .then(() => {
+      logProcessEvent("bootstrap_task_complete", { taskName });
+    })
+    .catch((error) => {
+      logProcessEvent("bootstrap_task_failed", {
+        taskName,
+        error: serializeUnknownError(error)
+      }, "error");
+    });
+}
+
 async function bootstrap() {
   logProcessEvent("bootstrap_start");
 
-  await Promise.all([
-    attachBangGame(io),
-    attachDavinciGame(io),
-    attachCatchmindGame(io),
-    attachHalliGame(io),
-    attachMemoryGame(io),
-    attachOmokGame(io),
-    attachYutGame(io),
-    restorePersistedRooms()
-  ]);
+  const bootstrapTasks = [
+    ["bang_namespace", () => attachBangGame(io)],
+    ["davinci_namespace", () => attachDavinciGame(io)],
+    ["catchmind_namespace", () => attachCatchmindGame(io)],
+    ["halli_namespace", () => attachHalliGame(io)],
+    ["memory_namespace", () => attachMemoryGame(io)],
+    ["omok_namespace", () => attachOmokGame(io)],
+    ["yut_namespace", () => attachYutGame(io)],
+    ["liar_room_restore", () => restorePersistedRooms()]
+  ];
+
+  bootstrapTasks.forEach(([taskName, task]) => {
+    void startBootstrapTask(taskName, task);
+  });
 
   server.listen(PORT, () => {
     logProcessEvent("listening", {
